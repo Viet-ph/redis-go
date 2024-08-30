@@ -89,6 +89,7 @@ func doHandShake() error {
 		return err
 	}
 	fmt.Println("Psync response: " + response.(string))
+	RdbUnMarshall(conn)
 
 	return nil
 }
@@ -123,4 +124,15 @@ func RdbMarshall() ([]byte, error) {
 
 	bytes := append([]byte(length), content...)
 	return bytes, nil
+}
+
+func RdbUnMarshall(conn net.Conn) {
+	buffer := make([]byte, config.DefaultMessageSize)
+	n, err := conn.Read(buffer)
+	if err != nil {
+		fmt.Println("Receive non rdb file")
+		return
+	}
+
+	fmt.Println(string(buffer[:n]))
 }
