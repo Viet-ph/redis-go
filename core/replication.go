@@ -2,7 +2,6 @@ package core
 
 import (
 	"bytes"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"net"
@@ -58,33 +57,36 @@ func doHandShake() error {
 	}
 	defer conn.Close()
 
+	handShakeCommands := map[string]string{
+		"PING":       "*1\r\n$4\r\nPING\r\n",
+		"REPLCONF 1": "*3\r\n$8\r\nREPLCONF\r\n$14\r\nlistening-port\r\n$4\r\n6380\r\n",
+		"REPLCONF 2": "*3\r\n$8\r\nREPLCONF\r\n$4\r\ncapa\r\n$6\r\npsync2\r\n",
+		"PSYNC":      "*3\r\n$5\r\nPSYNC\r\n$1\r\n?\r\n$2\r\n-1\r\n",
+	}
+
 	//Ping
-	command := "*1\r\n$4\r\nPING\r\n"
-	response, err := sendDataSync(conn, command)
+	response, err := sendDataSync(conn, handShakeCommands["PING"])
 	if err != nil {
 		return err
 	}
 	fmt.Println("Ping response: " + response.(string))
 
 	//Rep config 1
-	command = "*3\r\n$8\r\nREPLCONF\r\n$14\r\nlistening-port\r\n$4\r\n6380\r\n"
-	response, err = sendDataSync(conn, command)
+	response, err = sendDataSync(conn, handShakeCommands["REPLCONF 1"])
 	if err != nil {
 		return err
 	}
 	fmt.Println("Rep config 1 response: " + response.(string))
 
 	//Rep config 2
-	command = "*3\r\n$8\r\nREPLCONF\r\n$4\r\ncapa\r\n$6\r\npsync2\r\n"
-	response, err = sendDataSync(conn, command)
+	response, err = sendDataSync(conn, handShakeCommands["PSYNC"])
 	if err != nil {
 		return err
 	}
 	fmt.Println("Rep config 1 response: " + response.(string))
 
 	//PSYNC
-	command = "*3\r\n$5\r\nPSYNC\r\n$1\r\n?\r\n$2\r\n-1\r\n"
-	response, err = sendDataSync(conn, command)
+	response, err = sendDataSync(conn, handShakeCommands["PSYNC"])
 	if err != nil {
 		return err
 	}
@@ -112,27 +114,4 @@ func sendDataSync(conn net.Conn, data string) (response any, err error) {
 	}
 	// decoder.ResetBufOffset()
 	return decodedResponse, nil
-}
-
-func RdbMarshall() ([]byte, error) {
-	content, err := hex.DecodeString(EmptyRdbHexString)
-	if err != nil {
-		return nil, err
-	}
-
-	length := fmt.Sprintf("$%d\r\n", len(content))
-
-	bytes := append([]byte(length), content...)
-	return bytes, nil
-}
-
-func RdbUnMarshall(conn net.Conn) {
-	buffer := make([]byte, config.DefaultMessageSize)
-	n, err := conn.Read(buffer)
-	if err != nil {
-		fmt.Println("Receive non rdb file")
-		return
-	}
-
-	fmt.Println(string(buffer[:n]))
 }
