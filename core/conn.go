@@ -62,7 +62,6 @@ func (conn *Conn) Read(buf *bytes.Buffer) error {
 	}
 
 	return nil
-	// return syscall.Read(conn.Fd, buf)
 }
 
 func (conn *Conn) DrainQueue() error {

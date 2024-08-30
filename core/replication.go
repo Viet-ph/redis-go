@@ -81,7 +81,7 @@ func doHandShake() error {
 	if err != nil {
 		return err
 	}
-	fmt.Println("Rep config 1 response: " + response.(string))
+	fmt.Println("Rep config 2 response: " + response.(string))
 
 	//PSYNC
 	response, err = sendDataSync(conn, handShakeCommands["PSYNC"])
@@ -90,6 +90,8 @@ func doHandShake() error {
 	}
 	fmt.Println("Psync response: " + response.(string))
 	RdbUnMarshall(conn)
+
+	
 
 	return nil
 }
@@ -112,4 +114,21 @@ func sendDataSync(conn net.Conn, data string) (response any, err error) {
 	}
 	// decoder.ResetBufOffset()
 	return decodedResponse, nil
+}
+
+func getFileDescriptor(conn net.Conn) (int, error) {
+    // Type assert to *net.TCPConn
+    tcpConn, ok := conn.(*net.TCPConn)
+    if !ok {
+        return -1, fmt.Errorf("connection is not of type *net.TCPConn")
+    }
+
+    // Get the underlying file descriptor
+    file, err := tcpConn.File()
+    if err != nil {
+        return -1, err
+    }
+    defer file.Close()
+
+    return int(file.Fd()), nil
 }
