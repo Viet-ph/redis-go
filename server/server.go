@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net"
 	"os"
-	"strconv"
 	"strings"
 	"syscall"
 
@@ -162,42 +161,9 @@ func (server *Server) acceptNewConnection() error {
 
 func (server *Server) readCmdAndResponse(conn *core.Conn) error {
 	buffer := bytes.NewBuffer(make([]byte, 0, config.DefaultMessageSize))
-	temp := make([]byte, config.DefaultMessageSize)
-
-	//For loop to drain all the unknown size incomming message
-	for {
-		bytesRead, err := conn.Read(temp)
-		fmt.Println("Bytes read: " + strconv.Itoa(bytesRead))
-		if bytesRead == 0 || err == syscall.ECONNRESET || err == syscall.EPIPE {
-			//Graceful Close Detection:
-			//When syscall.Read returns 0, it indicates that the client has closed the connection gracefully.
-			//This is the most common way to detect a normal disconnection.
-
-			//Other Errors:
-			//Certain errors like ECONNRESET or EPIPE during a read or write operation
-			//indicate that the client has forcefully closed the connection,
-			//server should handle these errors by cleaning up the client’s resources.
-			return core.ErrorClientDisconnected
-		}
-		if err != nil {
-			if err == syscall.EAGAIN && buffer.Len() > 0 {
-				//We drained all the massage and no available message left in kernel buffer
-				break
-			} else if err == syscall.EAGAIN {
-				// No data available yet, return to event loop
-				return nil
-			}
-			// Handle other errors
-			return core.ErrorReadingSocket
-		}
-
-		buffer.Write(temp)
-
-		//If number of bytes read smaller than temp buffer size,
-		//we got all data in one go. Break here.
-		if bytesRead < config.DefaultMessageSize {
-			break
-		}
+	err := conn.Read(buffer)
+	if err != nil {
+		return err
 	}
 
 	fmt.Println("Parsing command...")
