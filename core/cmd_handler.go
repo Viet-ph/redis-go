@@ -148,5 +148,6 @@ func handleReplConf(args []string, store *datastore.Datastore) any {
 // REPLICATION SYNC
 func handlePsync(args []string, store *datastore.Datastore) any {
 	result := fmt.Sprintf("FULLRESYNC %s %d", ReplicationId, ReplicationOffset)
+	
 	return result
 }

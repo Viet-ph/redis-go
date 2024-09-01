@@ -16,27 +16,28 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-type Server struct {
-	connectedClients map[int]*core.Conn
-	iomultiplexer    mul.Iomuliplexer
-	fd               int
-	maxClients       int
-	store            *datastore.Datastore
+type AsyncServer struct {
+	connectedClients  map[int]*core.Conn
+	connectedReplicas map[int]*core.Conn
+	iomultiplexer     mul.Iomuliplexer
+	fd                int
+	maxClients        int
+	store             *datastore.Datastore
 }
 
-func NewAsyncServer() (*Server, error) {
+func NewAsyncServer() (*AsyncServer, error) {
 	serverFD, err := unix.Socket(unix.AF_INET, unix.SOCK_STREAM, 0)
 	if err != nil {
-		return &Server{}, err
+		return &AsyncServer{}, err
 	}
 
 	if err := unix.SetsockoptInt(serverFD, unix.SOL_SOCKET, unix.SO_REUSEADDR, 1); err != nil {
-		return &Server{}, err
+		return &AsyncServer{}, err
 	}
 
 	// Set the Socket operate in a non-blocking mode
 	if err := unix.SetNonblock(serverFD, true); err != nil {
-		return &Server{}, err
+		return &AsyncServer{}, err
 	}
 
 	// Bind the IP and the port
@@ -46,18 +47,19 @@ func NewAsyncServer() (*Server, error) {
 		Port: config.Port,
 		Addr: [4]byte{ip4[0], ip4[1], ip4[2], ip4[3]},
 	}); err != nil {
-		return &Server{}, err
+		return &AsyncServer{}, err
 	}
 
-	return &Server{
-		connectedClients: make(map[int]*core.Conn),
-		fd:               serverFD,
-		maxClients:       100,
-		store:            datastore.NewDatastore(),
+	return &AsyncServer{
+		connectedClients:  make(map[int]*core.Conn),
+		connectedReplicas: make(map[int]*core.Conn),
+		fd:                serverFD,
+		maxClients:        100,
+		store:             datastore.NewDatastore(),
 	}, nil
 }
 
-func (server *Server) Start() {
+func (server *AsyncServer) Start() {
 	defer server.close()
 
 	// Start listening
@@ -130,7 +132,7 @@ func (server *Server) Start() {
 	}
 }
 
-func (server *Server) acceptNewConnection() error {
+func (server *AsyncServer) acceptNewConnection() error {
 	connFD, sa, err := unix.Accept(server.fd)
 	if err != nil {
 		fmt.Println("Error accepting connection:", err)
@@ -166,29 +168,36 @@ func (server *Server) acceptNewConnection() error {
 	return nil
 }
 
-func (server *Server) readCmdAndResponse(conn *core.Conn) error {
-	buffer := bytes.NewBuffer(make([]byte, 0, config.DefaultMessageSize))
-	err := conn.Read(buffer)
+func (server *AsyncServer) readCmdAndResponse(conn *core.Conn) error {
+	underlyBuf := make([]byte, 0, config.DefaultMessageSize)
+	buffer := bytes.NewBuffer(underlyBuf)
+	bytesRead, err := conn.Read(buffer)
+	fmt.Println("Bytes read outside: " + strconv.Itoa(bytesRead))
 	if err != nil {
 		return err
 	}
 
-	fmt.Println("Parsing command...")
+	//fmt.Println("Parsing command...")
 	decoder := core.NewDecoder(buffer)
 	cmd, err := decoder.Parse()
 	if err != nil {
 		return fmt.Errorf("error parsing command")
 	}
-	fmt.Println(cmd)
+	//fmt.Println(cmd)
 
-	fmt.Println("Executing command...")
+	if core.IsWriteCommand(cmd) {
+		server.propagateCmd(underlyBuf[:bytesRead])
+	}
+
+	//fmt.Println("Executing command...")
 	result := core.ExecuteCmd(cmd, server.store)
-	fmt.Println("Command executed!")
+	//fmt.Println("Command executed!")
 
 	//Queue datas to write and write immediately after
 	if strings.Contains(cmd.Cmd, "PSYNC") {
 		rdb, _ := core.RdbMarshall()
 		err = conn.QueueDatas(result, rdb)
+		server.AddNewSlave(conn)
 	} else {
 		err = conn.QueueDatas(result)
 	}
@@ -199,7 +208,7 @@ func (server *Server) readCmdAndResponse(conn *core.Conn) error {
 	return nil
 }
 
-func (server *Server) handleWritableEvent(conn *core.Conn) {
+func (server *AsyncServer) handleWritableEvent(conn *core.Conn) {
 	fmt.Println("Seding response...")
 	err := conn.DrainQueue()
 	if err != nil {
@@ -212,7 +221,7 @@ func (server *Server) handleWritableEvent(conn *core.Conn) {
 	server.iomultiplexer.ModifyWatchingFd(conn.Fd, mul.OpRead)
 }
 
-func (server *Server) handleWritingError(err error, conn *core.Conn) {
+func (server *AsyncServer) handleWritingError(err error, conn *core.Conn) {
 	if err == core.ErrorNotFullyWritten {
 		//No data could be written, resubscribe with write event and return to wait for write event
 		fmt.Printf("Got write error: %v\n", err.Error())
@@ -225,19 +234,41 @@ func (server *Server) handleWritingError(err error, conn *core.Conn) {
 }
 
 // Function to handle client disconnection or cleanup
-func (server *Server) CloseConnecttion(client *core.Conn) {
+func (server *AsyncServer) CloseConnecttion(client *core.Conn) {
 	// Close the socket, cleanup resources
 	// Remove FD from epoll interest list
 	server.iomultiplexer.RemoveWatchFd(client.Fd)
 	client.Close()
 	// Remove client from your client management structures
 	delete(server.connectedClients, client.Fd)
+	delete(server.connectedReplicas, client.Fd)
 
 	ip, port, _ := client.GetAddress()
 	fmt.Printf("Client disconnected. IP = %s, Port = %d\n", ip.String(), port)
 }
 
-func (server *Server) close() {
+func (server *AsyncServer) close() {
 	server.iomultiplexer.Close()
 	unix.Close(server.fd)
+}
+
+func (server *AsyncServer) propagateCmd(rawCmd []byte) {
+	if len(server.connectedReplicas) == 0 {
+		return
+	}
+
+	//fmt.Println("Propagate " + string(rawCmd))
+
+	for _, slave := range server.connectedReplicas {
+		err := slave.QueueDatas(rawCmd)
+		if err != nil {
+			fmt.Println("Error propergate command to slave: " + err.Error())
+			continue
+		}
+	}
+}
+
+func (server *AsyncServer) AddNewSlave(conn *core.Conn) {
+	server.connectedReplicas[conn.Fd] = conn
+	delete(server.connectedClients, conn.Fd)
 }

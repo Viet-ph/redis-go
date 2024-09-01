@@ -21,39 +21,41 @@ var (
 
 	ReplicationId     uuid.UUID
 	ReplicationOffset int
+
+	slaves []int
 )
 
-func SetupMasterSlave() error {
+func SetupMasterSlave() (net.Conn, error) {
 	fmt.Println("Setting master-slave...")
+	ReplicationId = uuid.New()
+	ReplicationOffset = 0
 	if len(Master) > 0 {
 		masterSocket := strings.Split(Master, " ")
 		if len(masterSocket) != 2 {
-			return errors.New("incorrect master IP address or PORT")
+			return nil, errors.New("incorrect master IP address or PORT")
 		}
 		Role = "slave"
 		MasterHost = masterSocket[0]
 		MasterPort, _ = strconv.Atoi(masterSocket[1])
 
 		fmt.Println("Pinging master ...")
-		err := doHandShake()
+		conn, err := doHandShake()
 		if err != nil {
-			return err
+			return nil, err
 		}
+		return conn, nil
 	}
-	ReplicationId = uuid.New()
-	ReplicationOffset = 0
 
-	return nil
+	return nil, nil
 }
 
 // Synchronous behavior, means write or read -> master will block the current goroutine
-func doHandShake() error {
+func doHandShake() (net.Conn, error) {
 	address := fmt.Sprintf("%s:%d", MasterHost, MasterPort)
 	conn, err := net.Dial("tcp", address)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	defer conn.Close()
 
 	handShakeCommands := map[string]string{
 		"PING":       "*1\r\n$4\r\nPING\r\n",
@@ -65,30 +67,30 @@ func doHandShake() error {
 	//Ping
 	response, err := sendHandshake(conn, handShakeCommands["PING"])
 	if err != nil {
-		return err
+		return nil, err
 	}
 	fmt.Println("Ping response: " + response.(string))
 
 	//Rep config 1
 	response, err = sendHandshake(conn, handShakeCommands["REPLCONF 1"])
 	if err != nil {
-		return err
+		return nil, err
 	}
 	fmt.Println("Rep config 1 response: " + response.(string))
 
 	//Rep config 2
 	response, err = sendHandshake(conn, handShakeCommands["REPLCONF 2"])
 	if err != nil {
-		return err
+		return nil, err
 	}
 	fmt.Println("Rep config 2 response: " + response.(string))
 
 	//PSYNC
 	err = handleReSync([]byte(handShakeCommands["PSYNC"]), conn)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	return nil
+	return conn, nil
 }
 
 // Goroutine blocking operation

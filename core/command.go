@@ -3,6 +3,7 @@ package core
 import (
 	"errors"
 	"fmt"
+	"slices"
 
 	"github.com/Viet-ph/redis-go/datastore"
 )
@@ -95,4 +96,9 @@ func ExecuteCmd(cmd Command, store *datastore.Datastore) []byte {
 	}
 
 	return encoder.GetBufValue()
+}
+
+func IsWriteCommand(cmd Command) bool {
+	writeCommands := []string{"SET", "HSET"}
+	return slices.Contains(writeCommands, cmd.Cmd)
 }

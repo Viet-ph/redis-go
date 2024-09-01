@@ -12,7 +12,7 @@ import (
 
 type Conn struct {
 	Fd         int
-	WriteQueue [][]byte
+	writeQueue [][]byte
 	sa         unix.Sockaddr
 }
 
@@ -23,8 +23,9 @@ func NewConn(connFd int, sa unix.Sockaddr) *Conn {
 	}
 }
 
-func (conn *Conn) Read(buf *bytes.Buffer) error {
+func (conn *Conn) Read(buf *bytes.Buffer) (int, error) {
 	temp := make([]byte, config.DefaultMessageSize)
+	totalLength := 0
 	//For loop to drain all the unknown size incomming message
 	for {
 		bytesRead, err := unix.Read(conn.Fd, temp)
@@ -38,7 +39,7 @@ func (conn *Conn) Read(buf *bytes.Buffer) error {
 			//Certain errors like ECONNRESET or EPIPE during a read or write operation
 			//indicate that the client has forcefully closed the connection,
 			//server should handle these errors by cleaning up the client’s resources.
-			return ErrorClientDisconnected
+			return -1, ErrorClientDisconnected
 		}
 		if err != nil {
 			if err == unix.EAGAIN && buf.Len() > 0 {
@@ -46,13 +47,14 @@ func (conn *Conn) Read(buf *bytes.Buffer) error {
 				break
 			} else if err == unix.EAGAIN {
 				// No data available yet, return to event loop
-				return nil
+				return 0, nil
 			}
 			// Handle other errors
-			return ErrorReadingSocket
+			return -1, ErrorReadingSocket
 		}
 
 		buf.Write(temp)
+		totalLength += bytesRead
 
 		//If number of bytes read smaller than temp buffer size,
 		//we got all data in one go. Break here.
@@ -61,12 +63,12 @@ func (conn *Conn) Read(buf *bytes.Buffer) error {
 		}
 	}
 
-	return nil
+	return totalLength, nil
 }
 
 func (conn *Conn) DrainQueue() error {
-	for len(conn.WriteQueue) > 0 {
-		data := conn.WriteQueue[0]
+	for len(conn.writeQueue) > 0 {
+		data := conn.writeQueue[0]
 		n, err := unix.Write(conn.Fd, data)
 		fmt.Printf("Bytes wrote: %d, data length : %d\n", n, len(data))
 		if err != nil {
@@ -78,27 +80,27 @@ func (conn *Conn) DrainQueue() error {
 		}
 		if n < len(data) {
 			// Partial write maybe due to network error, keep the remaining data in the queue
-			conn.WriteQueue[0] = data[n:]
+			conn.writeQueue[0] = data[n:]
 			return ErrorNotFullyWritten
 		}
 
 		// Full write, remove the data from the queue
 		fmt.Println("Response sent: " + string(data))
-		conn.WriteQueue = conn.WriteQueue[1:]
+		conn.writeQueue = conn.writeQueue[1:]
 	}
 
 	return nil
 }
 
 func (conn *Conn) QueueDatas(data ...[]byte) error {
-	conn.WriteQueue = append(conn.WriteQueue, data...)
+	conn.writeQueue = append(conn.writeQueue, data...)
 	// Try to write immediately
 	err := conn.DrainQueue()
 	if err != nil {
 		return err
 	}
 
-	if len(conn.WriteQueue) > 0 {
+	if len(conn.writeQueue) > 0 {
 		return ErrorNotFullyWritten
 	}
 
