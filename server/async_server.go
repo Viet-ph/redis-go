@@ -109,8 +109,8 @@ func (server *AsyncServer) Start() {
 
 			} else {
 				if server.iomultiplexer.IsReadable(event) {
-					if conn, exists := server.connectedClients[fd]; exists {
-						err := server.readCmdAndResponse(conn)
+					if conn, exists := server.getConn(fd); exists {
+						err := server.handleReadableEvent(conn)
 						if err != nil {
 							fmt.Println("Error occured while serving client: " + err.Error())
 							server.CloseConnecttion(conn)
@@ -168,30 +168,29 @@ func (server *AsyncServer) acceptNewConnection() error {
 	return nil
 }
 
-func (server *AsyncServer) readCmdAndResponse(conn *core.Conn) error {
+func (server *AsyncServer) handleReadableEvent(conn *core.Conn) error {
+	//Read message sent from client
 	underlyBuf := make([]byte, 0, config.DefaultMessageSize)
 	buffer := bytes.NewBuffer(underlyBuf)
 	bytesRead, err := conn.Read(buffer)
-	fmt.Println("Bytes read outside: " + strconv.Itoa(bytesRead))
 	if err != nil {
 		return err
 	}
 
-	//fmt.Println("Parsing command...")
+	//If it's a command, parse it into command object
 	decoder := core.NewDecoder(buffer)
 	cmd, err := decoder.Parse()
 	if err != nil {
 		return fmt.Errorf("error parsing command")
 	}
-	//fmt.Println(cmd)
 
+	//Propagate command to slaves if possible
 	if core.IsWriteCommand(cmd) {
 		server.propagateCmd(underlyBuf[:bytesRead])
 	}
 
-	//fmt.Println("Executing command...")
+	//Execute command
 	result := core.ExecuteCmd(cmd, server.store)
-	//fmt.Println("Command executed!")
 
 	//Queue datas to write and write immediately after
 	if strings.Contains(cmd.Cmd, "PSYNC") {
@@ -271,4 +270,16 @@ func (server *AsyncServer) propagateCmd(rawCmd []byte) {
 func (server *AsyncServer) AddNewSlave(conn *core.Conn) {
 	server.connectedReplicas[conn.Fd] = conn
 	delete(server.connectedClients, conn.Fd)
+}
+
+func (server *AsyncServer) getConn(fd int) (*core.Conn, bool) {
+	if conn, exist := server.connectedClients[fd]; exist {
+		return conn, true
+	}
+
+	if conn, exist := server.connectedReplicas[fd]; exist {
+		return conn, true
+	}
+
+	return nil, false
 }

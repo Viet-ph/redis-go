@@ -22,6 +22,8 @@ func NewRepServer() *RepServer {
 }
 
 func (server *RepServer) Start(conn net.Conn) {
+	defer conn.Close()
+
 	//Handle master "write" commands
 	reader := bufio.NewReader(conn)
 	for {
