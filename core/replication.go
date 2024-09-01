@@ -63,41 +63,36 @@ func doHandShake() error {
 	}
 
 	//Ping
-	response, err := sendDataSync(conn, handShakeCommands["PING"])
+	response, err := sendHandshake(conn, handShakeCommands["PING"])
 	if err != nil {
 		return err
 	}
 	fmt.Println("Ping response: " + response.(string))
 
 	//Rep config 1
-	response, err = sendDataSync(conn, handShakeCommands["REPLCONF 1"])
+	response, err = sendHandshake(conn, handShakeCommands["REPLCONF 1"])
 	if err != nil {
 		return err
 	}
 	fmt.Println("Rep config 1 response: " + response.(string))
 
 	//Rep config 2
-	response, err = sendDataSync(conn, handShakeCommands["REPLCONF 2"])
+	response, err = sendHandshake(conn, handShakeCommands["REPLCONF 2"])
 	if err != nil {
 		return err
 	}
 	fmt.Println("Rep config 2 response: " + response.(string))
 
 	//PSYNC
-	response, err = sendDataSync(conn, handShakeCommands["PSYNC"])
+	err = handleReSync([]byte(handShakeCommands["PSYNC"]), conn)
 	if err != nil {
 		return err
 	}
-	fmt.Println("Psync response: " + response.(string))
-	RdbUnMarshall(conn)
-
-	
-
 	return nil
 }
 
 // Goroutine blocking operation
-func sendDataSync(conn net.Conn, data string) (response any, err error) {
+func sendHandshake(conn net.Conn, data string) (response any, err error) {
 	buffer := make([]byte, config.DefaultMessageSize)
 	decoder := NewDecoder(bytes.NewBuffer(buffer))
 	_, err = conn.Write([]byte(data))
@@ -108,27 +103,54 @@ func sendDataSync(conn net.Conn, data string) (response any, err error) {
 	if err != nil {
 		return "", err
 	}
+
 	decodedResponse, err := decoder.Decode()
 	if err != nil {
 		return "", err
 	}
-	// decoder.ResetBufOffset()
+
 	return decodedResponse, nil
 }
 
+func handleReSync(syncCmd []byte, conn net.Conn) error {
+	_, err := conn.Write(syncCmd)
+	if err != nil {
+		return err
+	}
+
+	container := make([]byte, config.DefaultMessageSize)
+	n, err := conn.Read(container)
+	if err != nil {
+		return err
+	}
+	crlf := bytes.Index(container, []byte{'\r', '\n'})
+	syncResponse := container[:crlf+2]
+	container = container[len(syncResponse):n]
+	decoder := NewDecoder(bytes.NewBuffer([]byte(syncResponse)))
+	docodedResponse, err := decoder.Decode()
+	if err != nil {
+		return err
+	}
+	fmt.Println("Psync response: " + docodedResponse.(string))
+
+	RdbUnMarshall(container)
+
+	return nil
+}
+
 func getFileDescriptor(conn net.Conn) (int, error) {
-    // Type assert to *net.TCPConn
-    tcpConn, ok := conn.(*net.TCPConn)
-    if !ok {
-        return -1, fmt.Errorf("connection is not of type *net.TCPConn")
-    }
+	// Type assert to *net.TCPConn
+	tcpConn, ok := conn.(*net.TCPConn)
+	if !ok {
+		return -1, fmt.Errorf("connection is not of type *net.TCPConn")
+	}
 
-    // Get the underlying file descriptor
-    file, err := tcpConn.File()
-    if err != nil {
-        return -1, err
-    }
-    defer file.Close()
+	// Get the underlying file descriptor
+	file, err := tcpConn.File()
+	if err != nil {
+		return -1, err
+	}
+	defer file.Close()
 
-    return int(file.Fd()), nil
+	return int(file.Fd()), nil
 }

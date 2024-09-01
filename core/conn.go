@@ -5,18 +5,18 @@ import (
 	"fmt"
 	"net"
 	"strconv"
-	"syscall"
 
 	"github.com/Viet-ph/redis-go/config"
+	"golang.org/x/sys/unix"
 )
 
 type Conn struct {
 	Fd         int
 	WriteQueue [][]byte
-	sa         syscall.Sockaddr
+	sa         unix.Sockaddr
 }
 
-func NewConn(connFd int, sa syscall.Sockaddr) *Conn {
+func NewConn(connFd int, sa unix.Sockaddr) *Conn {
 	return &Conn{
 		Fd: connFd,
 		sa: sa,
@@ -27,11 +27,11 @@ func (conn *Conn) Read(buf *bytes.Buffer) error {
 	temp := make([]byte, config.DefaultMessageSize)
 	//For loop to drain all the unknown size incomming message
 	for {
-		bytesRead, err := syscall.Read(conn.Fd, temp)
+		bytesRead, err := unix.Read(conn.Fd, temp)
 		fmt.Println("Bytes read: " + strconv.Itoa(bytesRead))
-		if bytesRead == 0 || err == syscall.ECONNRESET || err == syscall.EPIPE {
+		if bytesRead == 0 || err == unix.ECONNRESET || err == unix.EPIPE {
 			//Graceful Close Detection:
-			//When syscall.Read returns 0, it indicates that the client has closed the connection gracefully.
+			//When unix.Read returns 0, it indicates that the client has closed the connection gracefully.
 			//This is the most common way to detect a normal disconnection.
 
 			//Other Errors:
@@ -41,10 +41,10 @@ func (conn *Conn) Read(buf *bytes.Buffer) error {
 			return ErrorClientDisconnected
 		}
 		if err != nil {
-			if err == syscall.EAGAIN && buf.Len() > 0 {
+			if err == unix.EAGAIN && buf.Len() > 0 {
 				//We drained all the massage and no available message left in kernel buffer
 				break
-			} else if err == syscall.EAGAIN {
+			} else if err == unix.EAGAIN {
 				// No data available yet, return to event loop
 				return nil
 			}
@@ -67,10 +67,11 @@ func (conn *Conn) Read(buf *bytes.Buffer) error {
 func (conn *Conn) DrainQueue() error {
 	for len(conn.WriteQueue) > 0 {
 		data := conn.WriteQueue[0]
-		n, err := syscall.Write(conn.Fd, data)
+		n, err := unix.Write(conn.Fd, data)
+		fmt.Printf("Bytes wrote: %d, data length : %d\n", n, len(data))
 		if err != nil {
-			if err == syscall.EAGAIN {
-				// Socket is not ready for writing, return and wait for EPOLLOUT event
+			if err == unix.EAGAIN {
+				// Socket is not ready for writing, return and wait for write event
 				return ErrorNotFullyWritten
 			}
 			return err
@@ -105,7 +106,7 @@ func (conn *Conn) QueueDatas(data ...[]byte) error {
 }
 
 func (conn *Conn) Close() error {
-	return syscall.Close(conn.Fd)
+	return unix.Close(conn.Fd)
 }
 
 func (conn *Conn) GetAddress() (net.IP, int, error) {
@@ -115,10 +116,10 @@ func (conn *Conn) GetAddress() (net.IP, int, error) {
 	)
 
 	switch addr := conn.sa.(type) {
-	case *syscall.SockaddrInet4:
+	case *unix.SockaddrInet4:
 		ip = net.IPv4(addr.Addr[0], addr.Addr[1], addr.Addr[2], addr.Addr[3])
 		port = addr.Port
-	case *syscall.SockaddrInet6:
+	case *unix.SockaddrInet6:
 		ip = net.IP(addr.Addr[:])
 		port = addr.Port
 	default:

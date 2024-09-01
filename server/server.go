@@ -2,45 +2,47 @@ package server
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"net"
 	"os"
+	"strconv"
 	"strings"
-	"syscall"
 
 	"github.com/Viet-ph/redis-go/config"
 	"github.com/Viet-ph/redis-go/core"
 	"github.com/Viet-ph/redis-go/datastore"
 	mul "github.com/Viet-ph/redis-go/internal/multiplexer"
+	"golang.org/x/sys/unix"
 )
 
 type Server struct {
 	connectedClients map[int]*core.Conn
-	*mul.Epoll
-	fd         int
-	maxClients int
-	store      *datastore.Datastore
+	iomultiplexer    mul.Iomuliplexer
+	fd               int
+	maxClients       int
+	store            *datastore.Datastore
 }
 
 func NewAsyncServer() (*Server, error) {
-	serverFD, err := syscall.Socket(syscall.AF_INET, syscall.SOCK_STREAM, 0)
+	serverFD, err := unix.Socket(unix.AF_INET, unix.SOCK_STREAM, 0)
 	if err != nil {
 		return &Server{}, err
 	}
 
-	if err := syscall.SetsockoptInt(serverFD, syscall.SOL_SOCKET, syscall.SO_REUSEADDR, 1); err != nil {
+	if err := unix.SetsockoptInt(serverFD, unix.SOL_SOCKET, unix.SO_REUSEADDR, 1); err != nil {
 		return &Server{}, err
 	}
 
 	// Set the Socket operate in a non-blocking mode
-	if err := syscall.SetNonblock(serverFD, true); err != nil {
+	if err := unix.SetNonblock(serverFD, true); err != nil {
 		return &Server{}, err
 	}
 
 	// Bind the IP and the port
 	ip4 := net.ParseIP(config.Host)
 
-	if err := syscall.Bind(serverFD, &syscall.SockaddrInet4{
+	if err := unix.Bind(serverFD, &unix.SockaddrInet4{
 		Port: config.Port,
 		Addr: [4]byte{ip4[0], ip4[1], ip4[2], ip4[3]},
 	}); err != nil {
@@ -59,7 +61,7 @@ func (server *Server) Start() {
 	defer server.close()
 
 	// Start listening
-	err := syscall.Listen(server.fd, server.maxClients)
+	err := unix.Listen(server.fd, server.maxClients)
 	if err != nil {
 		fmt.Println("error while listening", err)
 		os.Exit(1)
@@ -69,14 +71,14 @@ func (server *Server) Start() {
 	fmt.Println("ready to accept connections")
 
 	// Create an epoll instance
-	server.Epoll, err = mul.NewEpoll(server.maxClients)
+	server.iomultiplexer, err = mul.New(server.maxClients)
 	if err != nil {
 		fmt.Println("Error creating epoll instance", err)
 		os.Exit(1)
 	}
 
 	// Add listener socket to epoll
-	err = server.AddWatchFd(server.fd, syscall.EPOLLIN)
+	err = server.iomultiplexer.AddWatchFd(server.fd, mul.OpRead)
 	if err != nil {
 		fmt.Println("Error adding listener to epoll:", err)
 		os.Exit(1)
@@ -84,14 +86,19 @@ func (server *Server) Start() {
 
 	//Start event loop
 	for {
-		events, err := server.Poll(-1)
+		events, err := server.iomultiplexer.Poll(-1)
+		fmt.Println("polled " + strconv.Itoa(len(events)) + " events")
 		if err != nil {
-			fmt.Println("Error during epoll wait:", err)
-			continue
+			if errors.Is(err, unix.EINTR) {
+				continue
+			}
+			fmt.Println("Error during epoll wait:" + err.Error())
+			return
 		}
 
 		for _, event := range events {
-			if int(event.Fd) == server.fd {
+			fd := mul.GetFdFromEvent(event)
+			if fd == server.fd {
 				err = server.acceptNewConnection()
 				if err != nil {
 					fmt.Println("Error connecting to client: ", err)
@@ -99,8 +106,8 @@ func (server *Server) Start() {
 				}
 
 			} else {
-				if server.IsReadable(event) {
-					if conn, exists := server.connectedClients[int(event.Fd)]; exists {
+				if server.iomultiplexer.IsReadable(event) {
+					if conn, exists := server.connectedClients[fd]; exists {
 						err := server.readCmdAndResponse(conn)
 						if err != nil {
 							fmt.Println("Error occured while serving client: " + err.Error())
@@ -111,8 +118,8 @@ func (server *Server) Start() {
 						continue
 					}
 				}
-				if server.IsWritable(event) {
-					if client, exists := server.connectedClients[int(event.Fd)]; exists {
+				if server.iomultiplexer.IsWritable(event) {
+					if client, exists := server.connectedClients[fd]; exists {
 						server.handleWritableEvent(client)
 					} else {
 						continue
@@ -124,7 +131,7 @@ func (server *Server) Start() {
 }
 
 func (server *Server) acceptNewConnection() error {
-	connFD, sa, err := syscall.Accept(server.fd)
+	connFD, sa, err := unix.Accept(server.fd)
 	if err != nil {
 		fmt.Println("Error accepting connection:", err)
 		return err
@@ -132,14 +139,14 @@ func (server *Server) acceptNewConnection() error {
 
 	//Set new client socket fd as non-block so it wont block
 	//the current thread while waiting for NIC doing its job
-	err = syscall.SetNonblock(connFD, true)
+	err = unix.SetNonblock(connFD, true)
 	if err != nil {
 		fmt.Printf("Error setting file descriptor %d as non-block: %v\n", connFD, err)
 		return err
 	}
 
 	//Add new client socket fd to epoll interesting list
-	err = server.AddWatchFd(connFD, syscall.EPOLLIN)
+	err = server.iomultiplexer.AddWatchFd(connFD, mul.OpRead)
 	if err != nil {
 		fmt.Println("Error subscribing client file descriptor to epoll:", err)
 		return err
@@ -202,14 +209,14 @@ func (server *Server) handleWritableEvent(conn *core.Conn) {
 
 	//Successfully drained and wrote all datas in queue,
 	//modify fd to be polled on read event only
-	server.ModifyWatchingFd(conn.Fd, syscall.EPOLLIN)
+	server.iomultiplexer.ModifyWatchingFd(conn.Fd, mul.OpRead)
 }
 
 func (server *Server) handleWritingError(err error, conn *core.Conn) {
 	if err == core.ErrorNotFullyWritten {
 		//No data could be written, resubscribe with write event and return to wait for write event
 		fmt.Printf("Got write error: %v\n", err.Error())
-		server.ModifyWatchingFd(conn.Fd, syscall.EPOLLOUT)
+		server.iomultiplexer.ModifyWatchingFd(conn.Fd, mul.OpWrite)
 		return
 	}
 	// Handle other errors (e.g., client disconnected)	 	 ``
@@ -221,7 +228,7 @@ func (server *Server) handleWritingError(err error, conn *core.Conn) {
 func (server *Server) CloseConnecttion(client *core.Conn) {
 	// Close the socket, cleanup resources
 	// Remove FD from epoll interest list
-	server.RemoveWatchFd(client.Fd)
+	server.iomultiplexer.RemoveWatchFd(client.Fd)
 	client.Close()
 	// Remove client from your client management structures
 	delete(server.connectedClients, client.Fd)
@@ -231,6 +238,6 @@ func (server *Server) CloseConnecttion(client *core.Conn) {
 }
 
 func (server *Server) close() {
-	server.Epoll.Close()
-	syscall.Close(server.fd)
+	server.iomultiplexer.Close()
+	unix.Close(server.fd)
 }
