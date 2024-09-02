@@ -23,9 +23,10 @@ type AsyncServer struct {
 	fd                int
 	maxClients        int
 	store             *datastore.Datastore
+	master            *core.Conn
 }
 
-func NewAsyncServer() (*AsyncServer, error) {
+func NewAsyncServer(masterConn *core.Conn) (*AsyncServer, error) {
 	serverFD, err := unix.Socket(unix.AF_INET, unix.SOCK_STREAM, 0)
 	if err != nil {
 		return &AsyncServer{}, err
@@ -56,6 +57,7 @@ func NewAsyncServer() (*AsyncServer, error) {
 		fd:                serverFD,
 		maxClients:        100,
 		store:             datastore.NewDatastore(),
+		master:            masterConn,
 	}, nil
 }
 
@@ -85,6 +87,9 @@ func (server *AsyncServer) Start() {
 		fmt.Println("Error adding listener to epoll:", err)
 		os.Exit(1)
 	}
+
+	// Add master socket to epoll if has any
+	server.setupMaster()
 
 	//Start event loop
 	for {
@@ -155,14 +160,15 @@ func (server *AsyncServer) acceptNewConnection() error {
 	}
 
 	//Add new client into connected clients map
-	server.connectedClients[int(connFD)] = core.NewConn(connFD, sa)
-
-	//Print out client's ip and port
-	ip, port, err := server.connectedClients[int(connFD)].GetAddress()
+	conn, err := core.NewConn(connFD, sa)
 	if err != nil {
-		fmt.Println("Error getting client address: ", err)
+		fmt.Println("Error create new connection: ", err)
 		return err
 	}
+	server.connectedClients[int(connFD)] = conn
+
+	//Print out client's ip and port
+	ip, port := server.connectedClients[int(connFD)].GetRemoteAddress()
 	fmt.Printf("Client connected: IP = %s, Port = %d\n", ip.String(), port)
 
 	return nil
@@ -185,18 +191,24 @@ func (server *AsyncServer) handleReadableEvent(conn *core.Conn) error {
 	}
 
 	//Propagate command to slaves if possible
-	if core.IsWriteCommand(cmd) {
+	if core.Role == "master" && core.IsWriteCommand(cmd) {
 		server.propagateCmd(underlyBuf[:bytesRead])
 	}
 
 	//Execute command
 	result := core.ExecuteCmd(cmd, server.store)
 
+	//Return early here if the executed comamnd is "Write" command,
+	//current role is "slave" and the conn on received event is the "master"
+	if core.Role == "slave" && core.IsMaster(conn) {
+		return nil
+	}
+
 	//Queue datas to write and write immediately after
 	if strings.Contains(cmd.Cmd, "PSYNC") {
 		rdb, _ := core.RdbMarshall()
 		err = conn.QueueDatas(result, rdb)
-		server.AddNewSlave(conn)
+		server.addNewSlave(conn)
 	} else {
 		err = conn.QueueDatas(result)
 	}
@@ -242,7 +254,7 @@ func (server *AsyncServer) CloseConnecttion(client *core.Conn) {
 	delete(server.connectedClients, client.Fd)
 	delete(server.connectedReplicas, client.Fd)
 
-	ip, port, _ := client.GetAddress()
+	ip, port := client.GetRemoteAddress()
 	fmt.Printf("Client disconnected. IP = %s, Port = %d\n", ip.String(), port)
 }
 
@@ -267,9 +279,31 @@ func (server *AsyncServer) propagateCmd(rawCmd []byte) {
 	}
 }
 
-func (server *AsyncServer) AddNewSlave(conn *core.Conn) {
+func (server *AsyncServer) addNewSlave(conn *core.Conn) {
 	server.connectedReplicas[conn.Fd] = conn
 	delete(server.connectedClients, conn.Fd)
+}
+
+func (server *AsyncServer) setupMaster() error {
+	if core.Role == "master" && server.master == nil {
+		return nil
+	}
+
+	fd := server.master.Fd
+	//Set new client socket fd as non-block so it wont block
+	//the current thread while waiting for NIC doing its job
+	err := unix.SetNonblock(fd, true)
+	if err != nil {
+		fmt.Printf("Error setting file descriptor %d as non-block: %v\n", fd, err)
+		return err
+	}
+
+	err = server.iomultiplexer.AddWatchFd(fd, mul.OpRead)
+	if err != nil {
+		return fmt.Errorf("error adding master fd to epoll: " + err.Error())
+	}
+
+	return nil
 }
 
 func (server *AsyncServer) getConn(fd int) (*core.Conn, bool) {
@@ -279,6 +313,10 @@ func (server *AsyncServer) getConn(fd int) (*core.Conn, bool) {
 
 	if conn, exist := server.connectedReplicas[fd]; exist {
 		return conn, true
+	}
+
+	if server.master != nil && server.master.Fd == fd {
+		return server.master, true
 	}
 
 	return nil, false

@@ -10,6 +10,7 @@ import (
 
 	"github.com/Viet-ph/redis-go/config"
 	"github.com/google/uuid"
+	"golang.org/x/sys/unix"
 )
 
 var (
@@ -56,6 +57,12 @@ func doHandShake() (net.Conn, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	masterAddr := conn.RemoteAddr().String()
+	localAddr := conn.LocalAddr().String()
+
+	fmt.Println("Master addre: " + masterAddr)
+	fmt.Println("Local addre: " + localAddr)
 
 	handShakeCommands := map[string]string{
 		"PING":       "*1\r\n$4\r\nPING\r\n",
@@ -152,7 +159,36 @@ func getFileDescriptor(conn net.Conn) (int, error) {
 	if err != nil {
 		return -1, err
 	}
-	defer file.Close()
+
+	conn.LocalAddr()
 
 	return int(file.Fd()), nil
+}
+
+func NetConnToConn(netConn net.Conn) (*Conn, error) {
+	if netConn == nil {
+		return nil, errors.New("nil argument")
+	}
+
+	fd, err := getFileDescriptor(netConn)
+	if err != nil {
+		return nil, err
+	}
+
+	remoteSockAddr, err := unix.Getpeername(fd)
+	if err != nil {
+		return nil, err
+	}
+
+	masterConn, err := NewConn(fd, remoteSockAddr)
+	if err != nil {
+		return nil, err
+	}
+
+	return masterConn, nil
+}
+
+func IsMaster(conn *Conn) bool {
+	ip, port := conn.GetRemoteAddress()
+	return ip.String() == MasterHost && port == MasterPort
 }

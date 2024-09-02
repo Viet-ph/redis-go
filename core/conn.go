@@ -13,14 +13,30 @@ import (
 type Conn struct {
 	Fd         int
 	writeQueue [][]byte
-	sa         unix.Sockaddr
+	remoteIP   net.IP
+	remotePort int
 }
 
-func NewConn(connFd int, sa unix.Sockaddr) *Conn {
-	return &Conn{
-		Fd: connFd,
-		sa: sa,
+func NewConn(connFd int, sa unix.Sockaddr) (*Conn, error) {
+	var (
+		ip   net.IP
+		port int
+	)
+	switch addr := sa.(type) {
+	case *unix.SockaddrInet4:
+		ip = net.IPv4(addr.Addr[0], addr.Addr[1], addr.Addr[2], addr.Addr[3])
+		port = addr.Port
+	case *unix.SockaddrInet6:
+		ip = net.IP(addr.Addr[:])
+		port = addr.Port
+	default:
+		return nil, fmt.Errorf("unknown address type")
 	}
+	return &Conn{
+		Fd:         connFd,
+		remoteIP:   ip,
+		remotePort: port,
+	}, nil
 }
 
 func (conn *Conn) Read(buf *bytes.Buffer) (int, error) {
@@ -111,22 +127,6 @@ func (conn *Conn) Close() error {
 	return unix.Close(conn.Fd)
 }
 
-func (conn *Conn) GetAddress() (net.IP, int, error) {
-	var (
-		ip   net.IP
-		port int
-	)
-
-	switch addr := conn.sa.(type) {
-	case *unix.SockaddrInet4:
-		ip = net.IPv4(addr.Addr[0], addr.Addr[1], addr.Addr[2], addr.Addr[3])
-		port = addr.Port
-	case *unix.SockaddrInet6:
-		ip = net.IP(addr.Addr[:])
-		port = addr.Port
-	default:
-		return ip, port, fmt.Errorf("unknown address type")
-	}
-
-	return ip, port, nil
+func (conn *Conn) GetRemoteAddress() (net.IP, int) {
+	return conn.remoteIP, conn.remotePort
 }
