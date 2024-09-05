@@ -1,4 +1,4 @@
-package core
+package connection
 
 import (
 	"bytes"
@@ -9,21 +9,17 @@ import (
 	"strings"
 
 	"github.com/Viet-ph/redis-go/config"
+	"github.com/Viet-ph/redis-go/core"
+	"github.com/Viet-ph/redis-go/core/info"
+	"github.com/Viet-ph/redis-go/core/proto"
 	"github.com/google/uuid"
 	"golang.org/x/sys/unix"
 )
 
 var (
-	Master string = ""
-	Role   string = "master"
-
-	MasterHost string = ""
-	MasterPort int    = 0
-
 	ReplicationId     uuid.UUID
 	ReplicationOffset int
-
-	NumReplicas = 0
+	ConnectedReplicas map[int]*Replica = make(map[int]*Replica)
 )
 
 type Replica struct {
@@ -54,14 +50,14 @@ func SetupMasterSlave() (net.Conn, error) {
 	fmt.Println("Setting master-slave...")
 	ReplicationId = uuid.New()
 	ReplicationOffset = 0
-	if len(Master) > 0 {
-		masterSocket := strings.Split(Master, " ")
+	if len(info.Master) > 0 {
+		masterSocket := strings.Split(info.Master, " ")
 		if len(masterSocket) != 2 {
 			return nil, errors.New("incorrect master IP address or PORT")
 		}
-		Role = "slave"
-		MasterHost = masterSocket[0]
-		MasterPort, _ = strconv.Atoi(masterSocket[1])
+		info.Role = "slave"
+		info.MasterHost = masterSocket[0]
+		info.MasterPort, _ = strconv.Atoi(masterSocket[1])
 
 		fmt.Println("Pinging master ...")
 		conn, err := doHandShake()
@@ -76,7 +72,7 @@ func SetupMasterSlave() (net.Conn, error) {
 
 // Synchronous behavior, means write or read -> master will block the current goroutine
 func doHandShake() (net.Conn, error) {
-	address := fmt.Sprintf("%s:%d", MasterHost, MasterPort)
+	address := fmt.Sprintf("%s:%d", info.MasterHost, info.MasterPort)
 	conn, err := net.Dial("tcp", address)
 	if err != nil {
 		return nil, err
@@ -127,7 +123,7 @@ func doHandShake() (net.Conn, error) {
 // Goroutine blocking operation
 func sendHandshake(conn net.Conn, data string) (response any, err error) {
 	buffer := make([]byte, config.DefaultMessageSize)
-	decoder := NewDecoder(bytes.NewBuffer(buffer))
+	decoder := proto.NewDecoder(bytes.NewBuffer(buffer))
 	_, err = conn.Write([]byte(data))
 	if err != nil {
 		return "", err
@@ -158,15 +154,26 @@ func handleReSync(syncCmd []byte, conn net.Conn) error {
 	}
 	crlf := bytes.Index(container, []byte{'\r', '\n'})
 	syncResponse := container[:crlf+2]
-	container = container[len(syncResponse):n]
-	decoder := NewDecoder(bytes.NewBuffer([]byte(syncResponse)))
+	RdbContainer := container[len(syncResponse):n]
+
+	//In linux, 2 sequencial writes from server doesn't come in 1 package like darwin.
+	//Here read 1 more time to get the rdb
+	if len(RdbContainer) == 0 {
+		RdbContainer = make([]byte, config.DefaultMessageSize)
+		_, err := conn.Read(RdbContainer)
+		if err != nil {
+			return err
+		}
+	}
+
+	decoder := proto.NewDecoder(bytes.NewBuffer([]byte(syncResponse)))
 	docodedResponse, err := decoder.Decode()
 	if err != nil {
 		return err
 	}
 	fmt.Println("Psync response: " + docodedResponse.(string))
 
-	RdbUnMarshall(container)
+	core.RdbUnMarshall(RdbContainer)
 
 	return nil
 }
@@ -214,5 +221,18 @@ func NetConnToConn(netConn net.Conn) (*Conn, error) {
 
 func IsMaster(conn *Conn) bool {
 	ip, port := conn.GetRemoteAddress()
-	return ip.String() == MasterHost && port == MasterPort
+	return ip.String() == info.MasterHost && port == info.MasterPort
+}
+
+func GetReplicas() []*Replica {
+	if len(ConnectedReplicas) == 0 {
+		return nil
+	}
+
+	replicas := make([]*Replica, len(ConnectedReplicas))
+	for _, replica := range ConnectedReplicas {
+		replicas = append(replicas, replica)
+	}
+
+	return replicas
 }

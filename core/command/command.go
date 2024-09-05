@@ -1,10 +1,13 @@
-package core
+package command
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 
+	"github.com/Viet-ph/redis-go/core/proto"
 	"github.com/Viet-ph/redis-go/datastore"
 )
 
@@ -76,35 +79,47 @@ var Commands = map[string]CmdMetaData{
 					The PSYNC command is called by Redis replicas for initiating a replication stream from the master.`,
 		handler: handlePsync,
 	},
-	"WAIT": {
-		name: "WAIT",
-		description: `This command blocks the current client until all the previous write commands 
-					are successfully transferred and acknowledged by at least the number of replicas
-					you specify in the numreplicas argument. If the value you specify for the timeout
-					argument (in milliseconds) is reached, the command returns even if the specified
-					 number of replicas were not yet reached.`,
-		handler: handleWait,
-	},
+	// "WAIT": {
+	// 	name: "WAIT",
+	// 	description: `This command blocks the current client until all the previous write commands
+	// 				are successfully transferred and acknowledged by at least the number of replicas
+	// 				you specify in the numreplicas argument. If the value you specify for the timeout
+	// 				argument (in milliseconds) is reached, the command returns even if the specified
+	// 				 number of replicas were not yet reached.`,
+	// 	handler: handleWait,
+	// },
 }
 
-func ExecuteCmd(cmd Command, store *datastore.Datastore) []byte {
-	encoder := NewEncoder()
+func Parse(rawCmdBuf *bytes.Buffer) (Command, error) {
+	decoder := proto.NewDecoder(rawCmdBuf)
+	value, err := decoder.Decode()
+	if err != nil {
+		return Command{}, err
+	}
+
+	interfaceArr := value.([]any)
+	strArr := make([]string, 0, len(interfaceArr))
+
+	for _, elem := range interfaceArr {
+		strArr = append(strArr, elem.(string))
+	}
+
+	return Command{
+		Cmd:  strings.ToUpper(strArr[0]),
+		Args: strArr[1:],
+	}, nil
+}
+
+func ExecuteCmd(cmd Command, store *datastore.Datastore) any {
 	var result any
 	if cmdMetaData, ok := Commands[cmd.Cmd]; ok {
 		result = cmdMetaData.handler(cmd.Args, store)
-		err := encoder.Encode(result, true)
-		fmt.Println(result)
-		if err != nil {
-			encoder.Reset()
-			result = errors.New("error encoding resp")
-			encoder.Encode(result, false)
-		}
+		fmt.Println("Result after executed: " + result.(string))
 	} else {
 		result = errors.New("unknown command")
-		encoder.Encode(result, false)
 	}
 
-	return encoder.GetBufValue()
+	return result
 }
 
 func IsWriteCommand(cmd Command) bool {

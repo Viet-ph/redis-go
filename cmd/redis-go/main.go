@@ -6,13 +6,14 @@ import (
 	"os"
 
 	"github.com/Viet-ph/redis-go/config"
-	"github.com/Viet-ph/redis-go/core"
+	"github.com/Viet-ph/redis-go/core/connection"
+	"github.com/Viet-ph/redis-go/core/info"
 	"github.com/Viet-ph/redis-go/server"
 )
 
 func setupFlags() {
 	flag.StringVar(&config.Host, "host", "0.0.0.0", "host for the redis server")
-	flag.StringVar(&core.Master, "replicaof", "", "master instance at <MASTER_HOST> <MASTER_PORT>")
+	flag.StringVar(&info.Master, "replicaof", "", "master instance at <MASTER_HOST> <MASTER_PORT>")
 	flag.IntVar(&config.Port, "port", 6379, "port for the redis server")
 	flag.Parse()
 }
@@ -22,7 +23,7 @@ func main() {
 	flag.PrintDefaults()
 
 	fmt.Println("Setting up master/slave ...")
-	netConn, err := core.SetupMasterSlave()
+	netConn, err := connection.SetupMasterSlave()
 	if err != nil {
 		fmt.Println(err)
 		os.Exit(1)
@@ -32,8 +33,8 @@ func main() {
 	var srv *server.AsyncServer
 	if netConn != nil {
 		fmt.Println("Starting slave server ...")
-		var masterConn *core.Conn
-		masterConn, err = core.NetConnToConn(netConn)
+		var masterConn *connection.Conn
+		masterConn, err = connection.NetConnToConn(netConn)
 		if err != nil {
 			fmt.Println("error getting connection to master instance: " + err.Error())
 			os.Exit(1)

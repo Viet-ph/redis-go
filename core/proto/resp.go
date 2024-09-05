@@ -1,10 +1,14 @@
-package core
+package proto
 
 import (
 	"bytes"
 	"fmt"
 	"strconv"
-	"strings"
+
+	//"strings"
+
+	"github.com/Viet-ph/redis-go/core"
+	//"github.com/Viet-ph/redis-go/core/commands"
 )
 
 // Constants for RESP protocol
@@ -35,25 +39,6 @@ func NewDecoder(buf *bytes.Buffer) *Decoder {
 // func (decoder *Decoder) GetBufferLen() int {
 // 	return decoder.buf.Len()
 // }
-
-func (decoder *Decoder) Parse() (Command, error) {
-	value, err := decoder.Decode()
-	if err != nil {
-		return Command{}, err
-	}
-
-	interfaceArr := value.([]any)
-	strArr := make([]string, 0, len(interfaceArr))
-
-	for _, elem := range interfaceArr {
-		strArr = append(strArr, elem.(string))
-	}
-
-	return Command{
-		Cmd:  strings.ToUpper(strArr[0]),
-		Args: strArr[1:],
-	}, nil
-}
 
 func (decoder *Decoder) Decode() (any, error) {
 	prefix, _, err := decoder.buf.ReadRune()
@@ -175,7 +160,7 @@ func (encoder *Encoder) Encode(data any, isSimple bool) error {
 
 func (encoder *Encoder) encodeError(err error) error {
 	var writeData string
-	if err == ErrorKeyNotExists {
+	if err == core.ErrorKeyNotExists {
 		writeData = fmt.Sprintf("%c%d%s", BulkStringPrefix, -1, CRLF)
 	} else {
 		writeData = fmt.Sprintf("%c%s%s", ErrorPrefix, err.Error(), CRLF)

@@ -1,4 +1,4 @@
-package core
+package connection
 
 import (
 	"bytes"
@@ -7,8 +7,11 @@ import (
 	"strconv"
 
 	"github.com/Viet-ph/redis-go/config"
+	"github.com/Viet-ph/redis-go/core"
 	"golang.org/x/sys/unix"
 )
+
+var ConnectedClients map[int]*Conn = make(map[int]*Conn)
 
 type Conn struct {
 	Fd         int
@@ -55,7 +58,7 @@ func (conn *Conn) Read(buf *bytes.Buffer) (int, error) {
 			//Certain errors like ECONNRESET or EPIPE during a read or write operation
 			//indicate that the client has forcefully closed the connection,
 			//server should handle these errors by cleaning up the client’s resources.
-			return -1, ErrorClientDisconnected
+			return -1, core.ErrorClientDisconnected
 		}
 		if err != nil {
 			if err == unix.EAGAIN && buf.Len() > 0 {
@@ -66,7 +69,7 @@ func (conn *Conn) Read(buf *bytes.Buffer) (int, error) {
 				return 0, nil
 			}
 			// Handle other errors
-			return -1, ErrorReadingSocket
+			return -1, core.ErrorReadingSocket
 		}
 
 		buf.Write(temp)
@@ -86,22 +89,20 @@ func (conn *Conn) DrainQueue() error {
 	for len(conn.writeQueue) > 0 {
 		data := conn.writeQueue[0]
 		n, err := unix.Write(conn.Fd, data)
-		fmt.Printf("Bytes wrote: %d, data length : %d\n", n, len(data))
 		if err != nil {
 			if err == unix.EAGAIN {
 				// Socket is not ready for writing, return and wait for write event
-				return ErrorNotFullyWritten
+				return core.ErrorNotFullyWritten
 			}
 			return err
 		}
 		if n < len(data) {
 			// Partial write maybe due to network error, keep the remaining data in the queue
 			conn.writeQueue[0] = data[n:]
-			return ErrorNotFullyWritten
+			return core.ErrorNotFullyWritten
 		}
 
 		// Full write, remove the data from the queue
-		fmt.Println("Response sent: " + string(data))
 		conn.writeQueue = conn.writeQueue[1:]
 	}
 
@@ -117,7 +118,7 @@ func (conn *Conn) QueueDatas(data ...[]byte) error {
 	}
 
 	if len(conn.writeQueue) > 0 {
-		return ErrorNotFullyWritten
+		return core.ErrorNotFullyWritten
 	}
 
 	return nil
@@ -130,4 +131,3 @@ func (conn *Conn) Close() error {
 func (conn *Conn) GetRemoteAddress() (net.IP, int) {
 	return conn.remoteIP, conn.remotePort
 }
-

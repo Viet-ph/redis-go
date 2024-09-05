@@ -4,5 +4,5 @@ var (
 	Host string = "0.0.0.0"
 	Port int    = 6379
 
-	DefaultMessageSize int = 1024
+	DefaultMessageSize = 1024
 )

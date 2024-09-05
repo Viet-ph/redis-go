@@ -1,4 +1,4 @@
-package core
+package command
 
 import (
 	"errors"
@@ -6,6 +6,9 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/Viet-ph/redis-go/core"
+	"github.com/Viet-ph/redis-go/core/connection"
+	"github.com/Viet-ph/redis-go/core/info"
 	"github.com/Viet-ph/redis-go/datastore"
 )
 
@@ -48,7 +51,7 @@ func handleGet(args []string, store *datastore.Datastore) any {
 
 	data, exists := store.Get(args[0])
 	if !exists {
-		return ErrorKeyNotExists
+		return core.ErrorKeyNotExists
 	}
 
 	stringData, ok := data.(string)
@@ -87,7 +90,7 @@ func handleHGet(args []string, store *datastore.Datastore) any {
 
 	data, exists := store.Get(args[0])
 	if !exists {
-		return ErrorKeyNotExists
+		return core.ErrorKeyNotExists
 	}
 
 	hmap, ok := data.(hmap)
@@ -97,7 +100,7 @@ func handleHGet(args []string, store *datastore.Datastore) any {
 
 	hmapValue, exists := hmap[args[1]]
 	if !exists {
-		return ErrorKeyNotExists
+		return core.ErrorKeyNotExists
 	}
 
 	return hmapValue
@@ -110,7 +113,7 @@ func handleHGetAll(args []string, store *datastore.Datastore) any {
 
 	data, exists := store.Get(args[0])
 	if !exists {
-		return ErrorKeyNotExists
+		return core.ErrorKeyNotExists
 	}
 
 	hmap, ok := data.(hmap)
@@ -128,12 +131,12 @@ func handleHGetAll(args []string, store *datastore.Datastore) any {
 }
 
 func handleInfo(args []string, store *datastore.Datastore) any {
-	role := "role:" + Role
+	role := "role:" + info.Role
 	info := []string{
 		"# Replication",
 		role,
-		"master_replid:" + strings.Replace(ReplicationId.String(), "-", "", -1),
-		"master_repl_offset:" + strconv.Itoa(ReplicationOffset),
+		"master_replid:" + strings.Replace(connection.ReplicationId.String(), "-", "", -1),
+		"master_repl_offset:" + strconv.Itoa(connection.ReplicationOffset),
 		"",
 	}
 
@@ -143,7 +146,7 @@ func handleInfo(args []string, store *datastore.Datastore) any {
 // REPLICATION CONFIGURATION
 func handleReplConf(args []string, store *datastore.Datastore) any {
 	if strings.ToUpper(args[0]) == "GETACK" && args[1] == "*" {
-		repOffset := strconv.Itoa(ReplicationOffset)
+		repOffset := strconv.Itoa(connection.ReplicationOffset)
 		return []string{"REPLCONF", "ACK", repOffset}
 	}
 	return "OK"
@@ -151,11 +154,14 @@ func handleReplConf(args []string, store *datastore.Datastore) any {
 
 // REPLICATION SYNC
 func handlePsync(args []string, store *datastore.Datastore) any {
-	result := fmt.Sprintf("FULLRESYNC %s %d", ReplicationId, ReplicationOffset)
+	result := fmt.Sprintf("FULLRESYNC %s %d", connection.ReplicationId, connection.ReplicationOffset)
 
 	return result
 }
 
-func handleWait(args []string, store *datastore.Datastore) any {
-	return NumReplicas
-}
+// func handleWait(args []string, store *datastore.Datastore) any {
+// 	numReps := args[0]
+// 	timeout := args[1]
+
+// 	return NumReplicas
+// }
