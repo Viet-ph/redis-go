@@ -23,8 +23,32 @@ var (
 	ReplicationId     uuid.UUID
 	ReplicationOffset int
 
-	slaves []int
+	NumReplicas = 0
 )
+
+type Replica struct {
+	conn   *Conn
+	offset int
+}
+
+func NewReplica(conn *Conn) *Replica {
+	return &Replica{
+		conn:   conn,
+		offset: 0,
+	}
+}
+
+func (rep *Replica) Propagate(datas ...[]byte) error {
+	if len(datas) == 0 {
+		return errors.New("no datas to propagate")
+	}
+
+	return rep.conn.QueueDatas(datas...)
+}
+
+func (rep *Replica) GetConn() *Conn {
+	return rep.conn
+}
 
 func SetupMasterSlave() (net.Conn, error) {
 	fmt.Println("Setting master-slave...")

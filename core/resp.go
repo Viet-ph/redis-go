@@ -66,8 +66,8 @@ func (decoder *Decoder) Decode() (any, error) {
 		return decoder.decodeSimpleString()
 	// case ErrorPrefix:
 	// 	return decodeError()
-	// case IntegerPrefix:
-	// 	return decodeInteger()
+	case IntegerPrefix:
+		return decoder.decodeInteger()
 	case BulkStringPrefix:
 		return decoder.decodeBulkString()
 	case ArrayPrefix:
@@ -83,6 +83,14 @@ func (decoder *Decoder) decodeSimpleString() (string, error) {
 		return "", err
 	}
 	return line[:len(line)-2], nil // Remove CRLF
+}
+
+func (decoder *Decoder) decodeInteger() (int64, error) {
+	line, err := decoder.buf.ReadString('\n')
+	if err != nil {
+		return 0, err
+	}
+	return strconv.ParseInt(line[:len(line)-2], 10, 64) // Remove CRLF
 }
 
 func (decoder *Decoder) decodeBulkString() (string, error) {

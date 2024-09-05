@@ -142,12 +142,20 @@ func handleInfo(args []string, store *datastore.Datastore) any {
 
 // REPLICATION CONFIGURATION
 func handleReplConf(args []string, store *datastore.Datastore) any {
+	if strings.ToUpper(args[0]) == "GETACK" && args[1] == "*" {
+		repOffset := strconv.Itoa(ReplicationOffset)
+		return []string{"REPLCONF", "ACK", repOffset}
+	}
 	return "OK"
 }
 
 // REPLICATION SYNC
 func handlePsync(args []string, store *datastore.Datastore) any {
 	result := fmt.Sprintf("FULLRESYNC %s %d", ReplicationId, ReplicationOffset)
-	
+
 	return result
+}
+
+func handleWait(args []string, store *datastore.Datastore) any {
+	return NumReplicas
 }

@@ -76,6 +76,15 @@ var Commands = map[string]CmdMetaData{
 					The PSYNC command is called by Redis replicas for initiating a replication stream from the master.`,
 		handler: handlePsync,
 	},
+	"WAIT": {
+		name: "WAIT",
+		description: `This command blocks the current client until all the previous write commands 
+					are successfully transferred and acknowledged by at least the number of replicas
+					you specify in the numreplicas argument. If the value you specify for the timeout
+					argument (in milliseconds) is reached, the command returns even if the specified
+					 number of replicas were not yet reached.`,
+		handler: handleWait,
+	},
 }
 
 func ExecuteCmd(cmd Command, store *datastore.Datastore) []byte {

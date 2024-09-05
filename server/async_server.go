@@ -18,7 +18,7 @@ import (
 
 type AsyncServer struct {
 	connectedClients  map[int]*core.Conn
-	connectedReplicas map[int]*core.Conn
+	connectedReplicas map[int]*core.Replica
 	iomultiplexer     mul.Iomuliplexer
 	fd                int
 	maxClients        int
@@ -53,7 +53,7 @@ func NewAsyncServer(masterConn *core.Conn) (*AsyncServer, error) {
 
 	return &AsyncServer{
 		connectedClients:  make(map[int]*core.Conn),
-		connectedReplicas: make(map[int]*core.Conn),
+		connectedReplicas: make(map[int]*core.Replica),
 		fd:                serverFD,
 		maxClients:        100,
 		store:             datastore.NewDatastore(),
@@ -198,9 +198,12 @@ func (server *AsyncServer) handleReadableEvent(conn *core.Conn) error {
 	//Execute command
 	result := core.ExecuteCmd(cmd, server.store)
 
+	//Update replication offset
+	core.ReplicationOffset += bytesRead
+
 	//Return early here if the executed comamnd is "Write" command,
 	//current role is "slave" and the conn on received event is the "master"
-	if core.Role == "slave" && core.IsMaster(conn) {
+	if core.Role == "slave" && core.IsMaster(conn) && core.IsWriteCommand(cmd) {
 		return nil
 	}
 
@@ -208,7 +211,7 @@ func (server *AsyncServer) handleReadableEvent(conn *core.Conn) error {
 	if strings.Contains(cmd.Cmd, "PSYNC") {
 		rdb, _ := core.RdbMarshall()
 		err = conn.QueueDatas(result, rdb)
-		server.addNewSlave(conn)
+		server.promoteToSlave(conn)
 	} else {
 		err = conn.QueueDatas(result)
 	}
@@ -268,10 +271,8 @@ func (server *AsyncServer) propagateCmd(rawCmd []byte) {
 		return
 	}
 
-	//fmt.Println("Propagate " + string(rawCmd))
-
-	for _, slave := range server.connectedReplicas {
-		err := slave.QueueDatas(rawCmd)
+	for _, replica := range server.connectedReplicas {
+		err := replica.Propagate(rawCmd)
 		if err != nil {
 			fmt.Println("Error propergate command to slave: " + err.Error())
 			continue
@@ -279,9 +280,10 @@ func (server *AsyncServer) propagateCmd(rawCmd []byte) {
 	}
 }
 
-func (server *AsyncServer) addNewSlave(conn *core.Conn) {
-	server.connectedReplicas[conn.Fd] = conn
+func (server *AsyncServer) promoteToSlave(conn *core.Conn) {
+	server.connectedReplicas[conn.Fd] = core.NewReplica(conn)
 	delete(server.connectedClients, conn.Fd)
+	core.NumReplicas += 1
 }
 
 func (server *AsyncServer) setupMaster() error {
@@ -311,8 +313,8 @@ func (server *AsyncServer) getConn(fd int) (*core.Conn, bool) {
 		return conn, true
 	}
 
-	if conn, exist := server.connectedReplicas[fd]; exist {
-		return conn, true
+	if replica, exist := server.connectedReplicas[fd]; exist {
+		return replica.GetConn(), true
 	}
 
 	if server.master != nil && server.master.Fd == fd {
@@ -320,4 +322,17 @@ func (server *AsyncServer) getConn(fd int) (*core.Conn, bool) {
 	}
 
 	return nil, false
+}
+
+func (server *AsyncServer) GetReplicas() []*core.Replica {
+	if len(server.connectedReplicas) == 0 {
+		return nil
+	}
+
+	replicas := make([]*core.Replica, len(server.connectedReplicas))
+	for _, replica := range server.connectedReplicas {
+		replicas = append(replicas, replica)
+	}
+
+	return replicas
 }

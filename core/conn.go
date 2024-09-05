@@ -130,3 +130,4 @@ func (conn *Conn) Close() error {
 func (conn *Conn) GetRemoteAddress() (net.IP, int) {
 	return conn.remoteIP, conn.remotePort
 }
+
