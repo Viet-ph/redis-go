@@ -17,9 +17,8 @@ type Task struct {
 	args     []any
 }
 
-func NewTask(conn *connection.Conn, cb any, args ...any) *Task {
+func NewTask(cb any, args ...any) *Task {
 	return &Task{
-		conn:     conn,
 		callback: cb,
 		args:     args,
 	}
@@ -78,9 +77,11 @@ func (tq *TaskQueue) DrainQueue() {
 	}
 
 	for len(tq.tasks) > 0 {
+		fmt.Printf("Number of tasks: %d\n", len(tq.tasks))
 		task := tq.tasks[0]
 		err := task.Execute()
 		if err != nil {
+			fmt.Println("Error while executing task: " + err.Error())
 			if err == core.ErrorRequeueTask {
 				tq.tasks = append(tq.tasks, task)
 			} else {

@@ -236,7 +236,7 @@ func GetReplicas() []*Replica {
 		return nil
 	}
 
-	replicas := make([]*Replica, len(ConnectedReplicas))
+	replicas := make([]*Replica, 0, len(ConnectedReplicas))
 	for _, replica := range ConnectedReplicas {
 		replicas = append(replicas, replica)
 	}

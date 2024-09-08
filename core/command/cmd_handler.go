@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Viet-ph/redis-go/config"
 	"github.com/Viet-ph/redis-go/core"
 	"github.com/Viet-ph/redis-go/core/info"
 	"github.com/Viet-ph/redis-go/datastore"
@@ -18,8 +19,9 @@ import (
 type hmap map[string]string
 
 type Handler struct {
-	taskQueue *queue.TaskQueue
-	currConn  *connection.Conn
+	taskQueue  *queue.TaskQueue
+	currClient *connection.Conn
+	currRep    *connection.Conn
 }
 
 func NewCmdHandler(taskQueue *queue.TaskQueue) *Handler {
@@ -32,7 +34,12 @@ func (handler *Handler) SetCurrentConn(conn *connection.Conn) error {
 	if conn.IsClosed {
 		return core.ErrorClientDisconnected
 	}
-	handler.currConn = conn
+
+	if connection.IsReplica(conn) {
+		handler.currRep = conn
+	} else {
+		handler.currClient = conn
+	}
 	return nil
 }
 
@@ -176,11 +183,12 @@ func (handler *Handler) ReplConf(args []string, store *datastore.Datastore) (any
 		repOffset, _ := strconv.Atoi(args[1])
 		// The channel will remain opened and exists if timeout is not occured
 		// and the wait command still blocking tyo receive acks from other replicas
-		if ackCh, ok := repOffs[handler.currConn]; ok {
+		if ackCh, ok := repOffs[handler.currClient]; ok {
+			fmt.Println("Sending offset to channel...")
 			ackCh <- repOffset
 		}
 
-		connection.ConnectedReplicas[handler.currConn.Fd].SetOffset(repOffset)
+		connection.ConnectedReplicas[handler.currRep.Fd].SetOffset(repOffset)
 		return nil, false
 	}
 
@@ -205,21 +213,30 @@ func (handler *Handler) Wait(args []string, store *datastore.Datastore) (any, bo
 		return errors.New("WRONGTYPE Operation against 'wait' command holding the wrong kind of value"), true
 	}
 
-	// Create new entry int acks map. This entry contains a channel to reiceive
+	latestMasterOffset := info.ReplicationOffset
+
+	// Close, delete the old and reate new entry in acks map. This entry contains a channel to reiceive
 	// offsets from others replicas. The key is the coonection that made the wait cmd.
-	repOffs[handler.currConn] = make(chan int)
+	if ackCh, exist := repOffs[handler.currClient]; exist {
+		close(ackCh)
+	}
+	// This channel must be buffered so it wont block the event loop when our gouroutine
+	// done getting acks from replicas and wont drain any further. Because even the 'wait'
+	// command is handled, other replicas may still sending replconf ack to master when
+	// the 'numReps' given by client is smaller than connected replicas.
+	repOffs[handler.currClient] = make(chan int, config.MaximumReplicas)
 
 	// Spawn a new goroutine here inorder to not block other clients while getting
 	// offsets from the replicas. This will give us the capability to handle other
 	// wait commands from other clients.
-	go func() {
+	go func(currentClient *connection.Conn) {
 		timeoutCtx, cancel := context.WithTimeout(context.Background(), time.Duration(timeout)*time.Millisecond)
 		defer cancel()
 
-		numAcks := getAcks(numReps, handler.currConn, timeoutCtx)
-		task := queue.NewTask(handler.currConn, respondWaitCmd, numAcks)
+		numAcks := GetRepOffsets(numReps, latestMasterOffset, currentClient, timeoutCtx)
+		task := queue.NewTask(respondWaitCmd, currentClient, numAcks)
 		handler.taskQueue.Add(*task)
-	}()
+	}(handler.currClient)
 
 	return nil, false
 }

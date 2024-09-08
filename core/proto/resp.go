@@ -94,7 +94,7 @@ func (decoder *Decoder) decodeBulkString() (string, error) {
 		return "", err
 	}
 
-	fmt.Println("Decoded string: " + string(data[:length]))
+	//fmt.Println("Decoded string: " + string(data[:length]))
 	return string(data[:length]), nil
 }
 

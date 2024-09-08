@@ -2,6 +2,7 @@ package command
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/Viet-ph/redis-go/core"
 	"github.com/Viet-ph/redis-go/core/info"
@@ -12,7 +13,7 @@ import (
 // A map that hold repOffs counter for each client/connection
 var repOffs = make(map[*connection.Conn]chan int)
 
-func getAcks(numReplicas int, conn *connection.Conn, ctx context.Context) int {
+func GetRepOffsets(numReplicas int, globalOffsAtTime int, conn *connection.Conn, ctx context.Context) int {
 	totalAck := 0
 	ackCh := repOffs[conn]
 	replicas := connection.GetReplicas()
@@ -20,7 +21,7 @@ func getAcks(numReplicas int, conn *connection.Conn, ctx context.Context) int {
 	encoder := proto.NewEncoder()
 	encoder.Encode(cmd, false)
 	encodedCmd := encoder.GetBufValue()
-	info.ReplicationOffset += len(encodedCmd)
+	//info.ReplicationOffset += len(encodedCmd)
 	for _, replica := range replicas {
 		//TODO: Handle writing error
 		_ = replica.Propagate(encodedCmd)
@@ -28,9 +29,11 @@ func getAcks(numReplicas int, conn *connection.Conn, ctx context.Context) int {
 
 loop:
 	for {
+		fmt.Println("Getting acks...")
 		select {
 		case offset := <-ackCh:
-			if offset == info.ReplicationOffset {
+			fmt.Printf("Rep offset: %d, server offset: %d\n", offset, info.ReplicationOffset)
+			if offset >= globalOffsAtTime {
 				totalAck += 1
 			}
 			if totalAck == numReplicas {
@@ -42,8 +45,8 @@ loop:
 	}
 
 	// Close offsets receiving channel and remove it to prevent any other incomming data
-	close(ackCh)
-	delete(repOffs, conn)
+	// close(ackCh)
+	// delete(repOffs, conn)
 	return totalAck
 }
 

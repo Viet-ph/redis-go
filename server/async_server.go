@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/Viet-ph/redis-go/config"
@@ -104,7 +105,9 @@ func (server *AsyncServer) Start() {
 		server.taskQueue.DrainQueue()
 
 		events, err := server.iomultiplexer.Poll(100)
-		//fmt.Println("polled " + strconv.Itoa(len(events)) + " events")
+		if len(events) > 0 {
+			fmt.Println("polled " + strconv.Itoa(len(events)) + " events")
+		}
 		if err != nil {
 			if errors.Is(err, unix.EINTR) {
 				continue
@@ -194,39 +197,43 @@ func (server *AsyncServer) handleReadableEvent(conn *connection.Conn) error {
 		return err
 	}
 
+	var rawCommand []byte
+	if info.Role == "master" {
+		// Make a seperate byte slice of the received command to propagate to replicas
+		rawCommand = make([]byte, 0, bytesRead)
+		copy(rawCommand, underlyBuf[:bytesRead])
+	}
+
 	//If it's a command, parse it into command object
 	cmd, err := command.Parse(buffer)
 	if err != nil {
 		return fmt.Errorf("error parsing command")
 	}
+	fmt.Println(cmd)
 
-	//Propagate command to slaves if possible
-	if info.Role == "master" && command.IsWriteCommand(cmd) {
-		// Master must also keep track of the offset
-		info.ReplicationOffset += bytesRead
-		server.propagateCmd(underlyBuf[:bytesRead])
-	}
-
-	//Execute command
+	// Keep track of latest client and replica serving
 	err = server.cmdHandler.SetCurrentConn(conn)
 	if err != nil {
 		return err
 	}
-	result, readyToRespond := command.ExecuteCmd(cmd, server.store, server.cmdHandler)
 
-	//Return early here if the executed comamnd is "Write" command,
-	//current role is "slave" and the conn on received event is the "master"
-	if info.Role == "slave" && connection.IsMaster(conn) && command.IsWriteCommand(cmd) {
-		//Update replication offset
-		info.ReplicationOffset += bytesRead
-		return nil
-	}
+	//Execute command
+	result, readyToRespond := command.ExecuteCmd(cmd, server.store, server.cmdHandler)
 
 	//Send result as response back to client and handle any possible errors
 	if readyToRespond {
 		server.respond(conn, cmd, result)
 	}
 
+	//Propagate command to slaves if has any
+	if info.Role == "master" && command.IsWriteCommand(cmd) {
+		server.propagateCmd(rawCommand)
+	}
+
+	if command.IsWriteCommand(cmd) {
+		// Master and replicas must keep track of the offset
+		info.ReplicationOffset += bytesRead
+	}
 	return nil
 }
 
@@ -245,6 +252,7 @@ func (server *AsyncServer) respond(conn *connection.Conn, cmd command.Command, r
 	if strings.Contains(cmd.Cmd, "PSYNC") {
 		rdb, _ := core.RdbMarshall()
 		err = conn.QueueDatas(byteSliceResult, rdb)
+		fmt.Printf("Accepted replica: %d\n", conn.Fd)
 		server.promoteToSlave(conn)
 	} else {
 		err = conn.QueueDatas(byteSliceResult)

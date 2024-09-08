@@ -103,6 +103,7 @@ func (conn *Conn) DrainQueue() error {
 		}
 
 		// Full write, remove the data from the queue
+		fmt.Println("Data sent: " + string(data))
 		conn.writeQueue = conn.writeQueue[1:]
 	}
 

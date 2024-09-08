@@ -3,7 +3,6 @@ package command
 import (
 	"bytes"
 	"errors"
-	"fmt"
 	"slices"
 	"strings"
 
@@ -122,7 +121,7 @@ func ExecuteCmd(cmd Command, store *datastore.Datastore, handler *Handler) (any,
 	)
 	if cmdMetaData, ok := GetCommands(handler)[cmd.Cmd]; ok {
 		result, ready = cmdMetaData.handler(cmd.Args, store)
-		fmt.Printf("Result after executed: %v\n", result)
+		//fmt.Printf("Result after executed: %v\n", result)
 	} else {
 		result = errors.New("unknown command")
 		ready = true
