@@ -1,35 +1,57 @@
 package command
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/Viet-ph/redis-go/core"
-	"github.com/Viet-ph/redis-go/core/connection"
 	"github.com/Viet-ph/redis-go/core/info"
 	"github.com/Viet-ph/redis-go/datastore"
+	"github.com/Viet-ph/redis-go/internal/connection"
+	"github.com/Viet-ph/redis-go/internal/queue"
 )
 
 type hmap map[string]string
 
-func handlePing(args []string, store *datastore.Datastore) any {
+type Handler struct {
+	taskQueue *queue.TaskQueue
+	currConn  *connection.Conn
+}
+
+func NewCmdHandler(taskQueue *queue.TaskQueue) *Handler {
+	return &Handler{
+		taskQueue: taskQueue,
+	}
+}
+
+func (handler *Handler) SetCurrentConn(conn *connection.Conn) error {
+	if conn.IsClosed {
+		return core.ErrorClientDisconnected
+	}
+	handler.currConn = conn
+	return nil
+}
+
+func (handler *Handler) Ping(args []string, store *datastore.Datastore) (any, bool) {
 	if len(args) > 1 {
-		return "wrong number of arguments for 'ping' command"
+		return "wrong number of arguments for 'ping' command", true
 	}
 
 	if len(args) == 0 {
-		return "PONG"
+		return "PONG", true
 	} else {
-		return args[0]
+		return args[0], true
 	}
 }
 
 // SET GET Handlers
-func handleSet(args []string, store *datastore.Datastore) any {
+func (handler *Handler) Set(args []string, store *datastore.Datastore) (any, bool) {
 	if len(args) < 2 {
-		return errors.New("ERR wrong number of arguments for 'set'command")
+		return errors.New("ERR wrong number of arguments for 'set'command"), true
 	}
 
 	key := args[0]
@@ -38,34 +60,34 @@ func handleSet(args []string, store *datastore.Datastore) any {
 
 	err := store.Set(key, value, options)
 	if err != nil {
-		return err
+		return err, true
 	}
 
-	return "OK"
+	return "OK", true
 }
 
-func handleGet(args []string, store *datastore.Datastore) any {
+func (handler *Handler) Get(args []string, store *datastore.Datastore) (any, bool) {
 	if len(args) != 1 {
-		return errors.New("ERR wrong number of arguments for 'get' command")
+		return errors.New("ERR wrong number of arguments for 'get' command"), true
 	}
 
 	data, exists := store.Get(args[0])
 	if !exists {
-		return core.ErrorKeyNotExists
+		return core.ErrorKeyNotExists, true
 	}
 
 	stringData, ok := data.(string)
 	if !ok {
-		return errors.New("WRONGTYPE Operation against a key holding the wrong kind of value")
+		return errors.New("WRONGTYPE Operation against a key holding the wrong kind of value"), true
 	}
 
-	return stringData
+	return stringData, true
 }
 
 // HSET HGET HGETALL Handlers
-func handleHset(args []string, store *datastore.Datastore) any {
+func (handler *Handler) Hset(args []string, store *datastore.Datastore) (any, bool) {
 	if len(args[1:])%2 != 0 {
-		return errors.New("ERR wrong number of arguments for 'hset' command")
+		return errors.New("ERR wrong number of arguments for 'hset' command"), true
 	}
 
 	hmap := make(hmap)
@@ -77,48 +99,48 @@ func handleHset(args []string, store *datastore.Datastore) any {
 
 	err := store.Set(key, hmap, nil)
 	if err != nil {
-		return err
+		return err, true
 	}
 
-	return "OK"
+	return "OK", true
 }
 
-func handleHGet(args []string, store *datastore.Datastore) any {
+func (handler *Handler) HGet(args []string, store *datastore.Datastore) (any, bool) {
 	if len(args) != 2 {
-		return errors.New("ERR wrong number of arguments for 'hget' command")
+		return errors.New("ERR wrong number of arguments for 'hget' command"), true
 	}
 
 	data, exists := store.Get(args[0])
 	if !exists {
-		return core.ErrorKeyNotExists
+		return core.ErrorKeyNotExists, true
 	}
 
 	hmap, ok := data.(hmap)
 	if !ok {
-		return errors.New("WRONGTYPE Operation against a key holding the wrong kind of value")
+		return errors.New("WRONGTYPE Operation against a key holding the wrong kind of value"), true
 	}
 
 	hmapValue, exists := hmap[args[1]]
 	if !exists {
-		return core.ErrorKeyNotExists
+		return core.ErrorKeyNotExists, true
 	}
 
-	return hmapValue
+	return hmapValue, true
 }
 
-func handleHGetAll(args []string, store *datastore.Datastore) any {
+func (handler *Handler) HGetAll(args []string, store *datastore.Datastore) (any, bool) {
 	if len(args) != 1 {
-		return errors.New("ERR wrong number of arguments for 'hgetall' command")
+		return errors.New("ERR wrong number of arguments for 'hgetall' command"), true
 	}
 
 	data, exists := store.Get(args[0])
 	if !exists {
-		return core.ErrorKeyNotExists
+		return core.ErrorKeyNotExists, true
 	}
 
 	hmap, ok := data.(hmap)
 	if !ok {
-		return errors.New("WRONGTYPE Operation against a key holding the wrong kind of value")
+		return errors.New("WRONGTYPE Operation against a key holding the wrong kind of value"), true
 	}
 
 	hmapKV := make([]string, 0, len(hmap)*2)
@@ -127,41 +149,77 @@ func handleHGetAll(args []string, store *datastore.Datastore) any {
 	}
 
 	fmt.Println(hmapKV)
-	return hmapKV
+	return hmapKV, true
 }
 
-func handleInfo(args []string, store *datastore.Datastore) any {
+func (handler *Handler) Info(args []string, store *datastore.Datastore) (any, bool) {
 	role := "role:" + info.Role
 	info := []string{
 		"# Replication",
 		role,
-		"master_replid:" + strings.Replace(connection.ReplicationId.String(), "-", "", -1),
-		"master_repl_offset:" + strconv.Itoa(connection.ReplicationOffset),
+		"master_replid:" + strings.Replace(info.ReplicationId.String(), "-", "", -1),
+		"master_repl_offset:" + strconv.Itoa(info.ReplicationOffset),
 		"",
 	}
 
-	return info
+	return info, true
 }
 
 // REPLICATION CONFIGURATION
-func handleReplConf(args []string, store *datastore.Datastore) any {
+func (handler *Handler) ReplConf(args []string, store *datastore.Datastore) (any, bool) {
 	if strings.ToUpper(args[0]) == "GETACK" && args[1] == "*" {
-		repOffset := strconv.Itoa(connection.ReplicationOffset)
-		return []string{"REPLCONF", "ACK", repOffset}
+		repOffset := strconv.Itoa(info.ReplicationOffset)
+		return []string{"REPLCONF", "ACK", repOffset}, true
 	}
-	return "OK"
+
+	if strings.ToUpper(args[0]) == "ACK" {
+		repOffset, _ := strconv.Atoi(args[1])
+		// The channel will remain opened and exists if timeout is not occured
+		// and the wait command still blocking tyo receive acks from other replicas
+		if ackCh, ok := repOffs[handler.currConn]; ok {
+			ackCh <- repOffset
+		}
+
+		connection.ConnectedReplicas[handler.currConn.Fd].SetOffset(repOffset)
+		return nil, false
+	}
+
+	return "OK", true
 }
 
 // REPLICATION SYNC
-func handlePsync(args []string, store *datastore.Datastore) any {
-	result := fmt.Sprintf("FULLRESYNC %s %d", connection.ReplicationId, connection.ReplicationOffset)
+func (handler *Handler) Psync(args []string, store *datastore.Datastore) (any, bool) {
+	result := fmt.Sprintf("FULLRESYNC %s %d", info.ReplicationId, info.ReplicationOffset)
 
-	return result
+	return result, true
 }
 
-// func handleWait(args []string, store *datastore.Datastore) any {
-// 	numReps := args[0]
-// 	timeout := args[1]
+func (handler *Handler) Wait(args []string, store *datastore.Datastore) (any, bool) {
+	numReps, err := strconv.Atoi(args[0])
+	if err != nil {
+		return errors.New("WRONGTYPE Operation against 'wait' command holding the wrong kind of value"), true
+	}
 
-// 	return NumReplicas
-// }
+	timeout, err := strconv.Atoi(args[1])
+	if err != nil {
+		return errors.New("WRONGTYPE Operation against 'wait' command holding the wrong kind of value"), true
+	}
+
+	// Create new entry int acks map. This entry contains a channel to reiceive
+	// offsets from others replicas. The key is the coonection that made the wait cmd.
+	repOffs[handler.currConn] = make(chan int)
+
+	// Spawn a new goroutine here inorder to not block other clients while getting
+	// offsets from the replicas. This will give us the capability to handle other
+	// wait commands from other clients.
+	go func() {
+		timeoutCtx, cancel := context.WithTimeout(context.Background(), time.Duration(timeout)*time.Millisecond)
+		defer cancel()
+
+		numAcks := getAcks(numReps, handler.currConn, timeoutCtx)
+		task := queue.NewTask(handler.currConn, respondWaitCmd, numAcks)
+		handler.taskQueue.Add(*task)
+	}()
+
+	return nil, false
+}

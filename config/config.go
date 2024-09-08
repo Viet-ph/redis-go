@@ -5,4 +5,6 @@ var (
 	Port int    = 6379
 
 	DefaultMessageSize = 1024
+	MaximumClients     = 100
+	MaximumReplicas    = 100
 )

@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"fmt"
 	"net"
-	"strconv"
 
 	"github.com/Viet-ph/redis-go/config"
 	"github.com/Viet-ph/redis-go/core"
@@ -18,6 +17,7 @@ type Conn struct {
 	writeQueue [][]byte
 	remoteIP   net.IP
 	remotePort int
+	IsClosed   bool
 }
 
 func NewConn(connFd int, sa unix.Sockaddr) (*Conn, error) {
@@ -48,7 +48,7 @@ func (conn *Conn) Read(buf *bytes.Buffer) (int, error) {
 	//For loop to drain all the unknown size incomming message
 	for {
 		bytesRead, err := unix.Read(conn.Fd, temp)
-		fmt.Println("Bytes read: " + strconv.Itoa(bytesRead))
+		//fmt.Println("Bytes read: " + strconv.Itoa(bytesRead))
 		if bytesRead == 0 || err == unix.ECONNRESET || err == unix.EPIPE {
 			//Graceful Close Detection:
 			//When unix.Read returns 0, it indicates that the client has closed the connection gracefully.
@@ -117,14 +117,13 @@ func (conn *Conn) QueueDatas(data ...[]byte) error {
 		return err
 	}
 
-	if len(conn.writeQueue) > 0 {
-		return core.ErrorNotFullyWritten
-	}
-
 	return nil
 }
 
 func (conn *Conn) Close() error {
+	conn.IsClosed = true
+	delete(ConnectedClients, conn.Fd)
+	delete(ConnectedReplicas, conn.Fd)
 	return unix.Close(conn.Fd)
 }
 

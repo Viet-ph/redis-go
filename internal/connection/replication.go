@@ -17,8 +17,6 @@ import (
 )
 
 var (
-	ReplicationId     uuid.UUID
-	ReplicationOffset int
 	ConnectedReplicas map[int]*Replica = make(map[int]*Replica)
 )
 
@@ -46,10 +44,14 @@ func (rep *Replica) GetConn() *Conn {
 	return rep.conn
 }
 
+func (rep *Replica) SetOffset(offs int) {
+	rep.offset = offs
+}
+
 func SetupMasterSlave() (net.Conn, error) {
 	fmt.Println("Setting master-slave...")
-	ReplicationId = uuid.New()
-	ReplicationOffset = 0
+	info.ReplicationId = uuid.New()
+	info.ReplicationOffset = 0
 	if len(info.Master) > 0 {
 		masterSocket := strings.Split(info.Master, " ")
 		if len(masterSocket) != 2 {
@@ -222,6 +224,11 @@ func NetConnToConn(netConn net.Conn) (*Conn, error) {
 func IsMaster(conn *Conn) bool {
 	ip, port := conn.GetRemoteAddress()
 	return ip.String() == info.MasterHost && port == info.MasterPort
+}
+
+func IsReplica(conn *Conn) bool {
+	_, ok := ConnectedReplicas[conn.Fd]
+	return ok
 }
 
 func GetReplicas() []*Replica {

@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net"
 	"os"
-	"strconv"
 	"strings"
 
 	"github.com/Viet-ph/redis-go/config"
@@ -15,21 +14,21 @@ import (
 	"github.com/Viet-ph/redis-go/core/info"
 	"github.com/Viet-ph/redis-go/core/proto"
 
-	"github.com/Viet-ph/redis-go/core/connection"
 	"github.com/Viet-ph/redis-go/datastore"
+	"github.com/Viet-ph/redis-go/internal/connection"
 	mul "github.com/Viet-ph/redis-go/internal/multiplexer"
+	"github.com/Viet-ph/redis-go/internal/queue"
 	"golang.org/x/sys/unix"
 )
 
 type AsyncServer struct {
-	// ConnectedClients  map[int]*connection.Conn    //   = make(map[int]*core.Conn)
-	// ConnectedReplicas map[int]*connection.Replica // = make(map[int]*rep.Replica)
-
 	iomultiplexer mul.Iomuliplexer
 	fd            int
 	maxClients    int
 	store         *datastore.Datastore
 	master        *connection.Conn
+	taskQueue     *queue.TaskQueue
+	cmdHandler    *command.Handler
 }
 
 func NewAsyncServer(masterConn *connection.Conn) (*AsyncServer, error) {
@@ -57,11 +56,15 @@ func NewAsyncServer(masterConn *connection.Conn) (*AsyncServer, error) {
 		return &AsyncServer{}, err
 	}
 
+	taskQueue := queue.NewTaskQueue()
+	handler := command.NewCmdHandler(taskQueue)
 	return &AsyncServer{
 		fd:         serverFD,
-		maxClients: 100,
+		maxClients: config.MaximumClients,
 		store:      datastore.NewDatastore(),
 		master:     masterConn,
+		taskQueue:  taskQueue,
+		cmdHandler: handler,
 	}, nil
 }
 
@@ -97,8 +100,11 @@ func (server *AsyncServer) Start() {
 
 	//Start event loop
 	for {
-		events, err := server.iomultiplexer.Poll(-1)
-		fmt.Println("polled " + strconv.Itoa(len(events)) + " events")
+		//Check task queue for any tasks that available
+		server.taskQueue.DrainQueue()
+
+		events, err := server.iomultiplexer.Poll(100)
+		//fmt.Println("polled " + strconv.Itoa(len(events)) + " events")
 		if err != nil {
 			if errors.Is(err, unix.EINTR) {
 				continue
@@ -196,22 +202,30 @@ func (server *AsyncServer) handleReadableEvent(conn *connection.Conn) error {
 
 	//Propagate command to slaves if possible
 	if info.Role == "master" && command.IsWriteCommand(cmd) {
+		// Master must also keep track of the offset
+		info.ReplicationOffset += bytesRead
 		server.propagateCmd(underlyBuf[:bytesRead])
 	}
 
 	//Execute command
-	result := command.ExecuteCmd(cmd, server.store)
+	err = server.cmdHandler.SetCurrentConn(conn)
+	if err != nil {
+		return err
+	}
+	result, readyToRespond := command.ExecuteCmd(cmd, server.store, server.cmdHandler)
 
 	//Return early here if the executed comamnd is "Write" command,
 	//current role is "slave" and the conn on received event is the "master"
 	if info.Role == "slave" && connection.IsMaster(conn) && command.IsWriteCommand(cmd) {
 		//Update replication offset
-		connection.ReplicationOffset += bytesRead
+		info.ReplicationOffset += bytesRead
 		return nil
 	}
 
 	//Send result as response back to client and handle any possible errors
-	server.respond(conn, cmd, result)
+	if readyToRespond {
+		server.respond(conn, cmd, result)
+	}
 
 	return nil
 }
@@ -271,9 +285,6 @@ func (server *AsyncServer) CloseConnecttion(client *connection.Conn) {
 	// Remove FD from epoll interest list
 	server.iomultiplexer.RemoveWatchFd(client.Fd)
 	client.Close()
-	// Remove client from your client management structures
-	delete(connection.ConnectedClients, client.Fd)
-	delete(connection.ConnectedReplicas, client.Fd)
 
 	ip, port := client.GetRemoteAddress()
 	fmt.Printf("Client disconnected. IP = %s, Port = %d\n", ip.String(), port)
@@ -340,4 +351,3 @@ func (server *AsyncServer) getConn(fd int) (*connection.Conn, bool) {
 
 	return nil, false
 }
-

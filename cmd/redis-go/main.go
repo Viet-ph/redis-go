@@ -6,8 +6,8 @@ import (
 	"os"
 
 	"github.com/Viet-ph/redis-go/config"
-	"github.com/Viet-ph/redis-go/core/connection"
 	"github.com/Viet-ph/redis-go/core/info"
+	"github.com/Viet-ph/redis-go/internal/connection"
 	"github.com/Viet-ph/redis-go/server"
 )
 

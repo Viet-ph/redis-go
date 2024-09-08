@@ -1,17 +1,15 @@
 package info
 
-import (
-	//rep "github.com/Viet-ph/redis-go/core/replication"
-)
+import "github.com/google/uuid"
+
 
 var (
-	Host string = "0.0.0.0"
-	Port int    = 6379
-
 	Master string = ""
 	Role   string = "master"
 
 	MasterHost string = ""
 	MasterPort int    = 0
-)
 
+	ReplicationId     uuid.UUID
+	ReplicationOffset int
+)
