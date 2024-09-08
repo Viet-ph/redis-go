@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/Viet-ph/redis-go/core/info"
 	"github.com/Viet-ph/redis-go/core/proto"
 	"github.com/Viet-ph/redis-go/datastore"
 )
@@ -123,8 +124,12 @@ func ExecuteCmd(cmd Command, store *datastore.Datastore, handler *Handler) (any,
 		result, ready = cmdMetaData.handler(cmd.Args, store)
 		//fmt.Printf("Result after executed: %v\n", result)
 	} else {
-		result = errors.New("unknown command")
-		ready = true
+		return errors.New("unknown command"), true
+	}
+
+	// If current role is slave, just execute any 'write' commands and forget.
+	if IsWriteCommand(cmd) && info.Role == "slave" {
+		return nil, false
 	}
 
 	return result, ready

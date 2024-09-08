@@ -180,6 +180,7 @@ func (server *AsyncServer) acceptNewConnection() error {
 		return err
 	}
 	connection.ConnectedClients[int(connFD)] = conn
+	command.OffsTracking[conn] = &command.OffsTracker{CapturedOffs: 0}
 
 	//Print out client's ip and port
 	ip, port := connection.ConnectedClients[int(connFD)].GetRemoteAddress()
@@ -200,7 +201,7 @@ func (server *AsyncServer) handleReadableEvent(conn *connection.Conn) error {
 	var rawCommand []byte
 	if info.Role == "master" {
 		// Make a seperate byte slice of the received command to propagate to replicas
-		rawCommand = make([]byte, 0, bytesRead)
+		rawCommand = make([]byte, bytesRead)
 		copy(rawCommand, underlyBuf[:bytesRead])
 	}
 
@@ -228,6 +229,8 @@ func (server *AsyncServer) handleReadableEvent(conn *connection.Conn) error {
 	//Propagate command to slaves if has any
 	if info.Role == "master" && command.IsWriteCommand(cmd) {
 		server.propagateCmd(rawCommand)
+		tracker := command.OffsTracking[conn]
+		tracker.CapturedOffs += bytesRead
 	}
 
 	if command.IsWriteCommand(cmd) {
@@ -252,7 +255,7 @@ func (server *AsyncServer) respond(conn *connection.Conn, cmd command.Command, r
 	if strings.Contains(cmd.Cmd, "PSYNC") {
 		rdb, _ := core.RdbMarshall()
 		err = conn.QueueDatas(byteSliceResult, rdb)
-		fmt.Printf("Accepted replica: %d\n", conn.Fd)
+		//fmt.Printf("Accepted replicatiobn: %d\n", conn.Fd)
 		server.promoteToSlave(conn)
 	} else {
 		err = conn.QueueDatas(byteSliceResult)
@@ -320,6 +323,10 @@ func (server *AsyncServer) propagateCmd(rawCmd []byte) {
 func (server *AsyncServer) promoteToSlave(conn *connection.Conn) {
 	connection.ConnectedReplicas[conn.Fd] = connection.NewReplica(conn)
 	delete(connection.ConnectedClients, conn.Fd)
+
+	// Delete entry from offset tracking map because only master should keep
+	// track of replications offset
+	delete(command.OffsTracking, conn)
 }
 
 func (server *AsyncServer) setupMaster() error {

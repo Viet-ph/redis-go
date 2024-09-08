@@ -10,12 +10,20 @@ import (
 	"github.com/Viet-ph/redis-go/internal/connection"
 )
 
-// A map that hold repOffs counter for each client/connection
-var repOffs = make(map[*connection.Conn]chan int)
+type OffsTracker struct {
+	// Offset captured after processed write commands for each context
+	CapturedOffs int
 
-func GetRepOffsets(numReplicas int, globalOffsAtTime int, conn *connection.Conn, ctx context.Context) int {
+	// Channel to acknowledge replication offsets
+	AckCh chan int
+}
+
+// A map that hold OffsTracking counter for each client context
+var OffsTracking = make(map[*connection.Conn]*OffsTracker)
+
+func GetRepOffsets(numReplicas int, conn *connection.Conn, ctx context.Context) int {
 	totalAck := 0
-	ackCh := repOffs[conn]
+	offsTracker := OffsTracking[conn]
 	replicas := connection.GetReplicas()
 	cmd := []string{"REPLCONF", "GETACK", "*"}
 	encoder := proto.NewEncoder()
@@ -31,9 +39,9 @@ loop:
 	for {
 		fmt.Println("Getting acks...")
 		select {
-		case offset := <-ackCh:
+		case offset := <-offsTracker.AckCh:
 			fmt.Printf("Rep offset: %d, server offset: %d\n", offset, info.ReplicationOffset)
-			if offset >= globalOffsAtTime {
+			if offset >= offsTracker.CapturedOffs {
 				totalAck += 1
 			}
 			if totalAck == numReplicas {
@@ -44,9 +52,6 @@ loop:
 		}
 	}
 
-	// Close offsets receiving channel and remove it to prevent any other incomming data
-	// close(ackCh)
-	// delete(repOffs, conn)
 	return totalAck
 }
 

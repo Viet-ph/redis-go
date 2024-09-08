@@ -183,9 +183,9 @@ func (handler *Handler) ReplConf(args []string, store *datastore.Datastore) (any
 		repOffset, _ := strconv.Atoi(args[1])
 		// The channel will remain opened and exists if timeout is not occured
 		// and the wait command still blocking tyo receive acks from other replicas
-		if ackCh, ok := repOffs[handler.currClient]; ok {
+		if offsTracker, ok := OffsTracking[handler.currClient]; ok {
 			fmt.Println("Sending offset to channel...")
-			ackCh <- repOffset
+			offsTracker.AckCh <- repOffset
 		}
 
 		connection.ConnectedReplicas[handler.currRep.Fd].SetOffset(repOffset)
@@ -213,18 +213,17 @@ func (handler *Handler) Wait(args []string, store *datastore.Datastore) (any, bo
 		return errors.New("WRONGTYPE Operation against 'wait' command holding the wrong kind of value"), true
 	}
 
-	latestMasterOffset := info.ReplicationOffset
-
 	// Close, delete the old and reate new entry in acks map. This entry contains a channel to reiceive
-	// offsets from others replicas. The key is the coonection that made the wait cmd.
-	if ackCh, exist := repOffs[handler.currClient]; exist {
-		close(ackCh)
+	// offsets from others replicas. The key is the connection that made the wait cmd.
+	offsTracker := OffsTracking[handler.currClient]
+	if offsTracker.AckCh != nil {
+		close(offsTracker.AckCh)
 	}
 	// This channel must be buffered so it wont block the event loop when our gouroutine
 	// done getting acks from replicas and wont drain any further. Because even the 'wait'
 	// command is handled, other replicas may still sending replconf ack to master when
 	// the 'numReps' given by client is smaller than connected replicas.
-	repOffs[handler.currClient] = make(chan int, config.MaximumReplicas)
+	offsTracker.AckCh = make(chan int, config.MaximumReplicas)
 
 	// Spawn a new goroutine here inorder to not block other clients while getting
 	// offsets from the replicas. This will give us the capability to handle other
@@ -233,7 +232,7 @@ func (handler *Handler) Wait(args []string, store *datastore.Datastore) (any, bo
 		timeoutCtx, cancel := context.WithTimeout(context.Background(), time.Duration(timeout)*time.Millisecond)
 		defer cancel()
 
-		numAcks := GetRepOffsets(numReps, latestMasterOffset, currentClient, timeoutCtx)
+		numAcks := GetRepOffsets(numReps, currentClient, timeoutCtx)
 		task := queue.NewTask(respondWaitCmd, currentClient, numAcks)
 		handler.taskQueue.Add(*task)
 	}(handler.currClient)
