@@ -9,10 +9,10 @@ import (
 	"time"
 
 	"github.com/Viet-ph/redis-go/config"
-	"github.com/Viet-ph/redis-go/core"
-	"github.com/Viet-ph/redis-go/core/info"
-	"github.com/Viet-ph/redis-go/datastore"
 	"github.com/Viet-ph/redis-go/internal/connection"
+	"github.com/Viet-ph/redis-go/internal/datastore"
+	custom_err "github.com/Viet-ph/redis-go/internal/error"
+	"github.com/Viet-ph/redis-go/internal/info"
 	"github.com/Viet-ph/redis-go/internal/queue"
 )
 
@@ -32,7 +32,7 @@ func NewCmdHandler(taskQueue *queue.TaskQueue) *Handler {
 
 func (handler *Handler) SetCurrentConn(conn *connection.Conn) error {
 	if conn.IsClosed {
-		return core.ErrorClientDisconnected
+		return custom_err.ErrorClientDisconnected
 	}
 
 	if connection.IsReplica(conn) {
@@ -80,7 +80,7 @@ func (handler *Handler) Get(args []string, store *datastore.Datastore) (any, boo
 
 	data, exists := store.Get(args[0])
 	if !exists {
-		return core.ErrorKeyNotExists, true
+		return custom_err.ErrorKeyNotExists, true
 	}
 
 	stringData, ok := data.(string)
@@ -119,7 +119,7 @@ func (handler *Handler) HGet(args []string, store *datastore.Datastore) (any, bo
 
 	data, exists := store.Get(args[0])
 	if !exists {
-		return core.ErrorKeyNotExists, true
+		return custom_err.ErrorKeyNotExists, true
 	}
 
 	hmap, ok := data.(hmap)
@@ -129,7 +129,7 @@ func (handler *Handler) HGet(args []string, store *datastore.Datastore) (any, bo
 
 	hmapValue, exists := hmap[args[1]]
 	if !exists {
-		return core.ErrorKeyNotExists, true
+		return custom_err.ErrorKeyNotExists, true
 	}
 
 	return hmapValue, true
@@ -142,7 +142,7 @@ func (handler *Handler) HGetAll(args []string, store *datastore.Datastore) (any,
 
 	data, exists := store.Get(args[0])
 	if !exists {
-		return core.ErrorKeyNotExists, true
+		return custom_err.ErrorKeyNotExists, true
 	}
 
 	hmap, ok := data.(hmap)
@@ -181,8 +181,8 @@ func (handler *Handler) ReplConf(args []string, store *datastore.Datastore) (any
 
 	if strings.ToUpper(args[0]) == "ACK" {
 		repOffset, _ := strconv.Atoi(args[1])
-		// The channel will remain opened and exists if timeout is not occured
-		// and the wait command still blocking tyo receive acks from other replicas
+		// The channel will remain opened and exists if timeout is not occured.
+		// The wait command still blocking to receive acks from other replicas
 		if offsTracker, ok := OffsTracking[handler.currClient]; ok {
 			fmt.Println("Sending offset to channel...")
 			offsTracker.AckCh <- repOffset
@@ -213,7 +213,7 @@ func (handler *Handler) Wait(args []string, store *datastore.Datastore) (any, bo
 		return errors.New("WRONGTYPE Operation against 'wait' command holding the wrong kind of value"), true
 	}
 
-	// Close, delete the old and reate new entry in acks map. This entry contains a channel to reiceive
+	// Close, delete the old and create new entry in acks map. This entry contains a channel to reiceive
 	// offsets from others replicas. The key is the connection that made the wait cmd.
 	offsTracker := OffsTracking[handler.currClient]
 	if offsTracker.AckCh != nil {
@@ -232,10 +232,23 @@ func (handler *Handler) Wait(args []string, store *datastore.Datastore) (any, bo
 		timeoutCtx, cancel := context.WithTimeout(context.Background(), time.Duration(timeout)*time.Millisecond)
 		defer cancel()
 
-		numAcks := GetRepOffsets(numReps, currentClient, timeoutCtx)
+		numAcks := GetRepOffsets(numReps, offsTracker, timeoutCtx)
 		task := queue.NewTask(respondWaitCmd, currentClient, numAcks)
 		handler.taskQueue.Add(*task)
 	}(handler.currClient)
 
 	return nil, false
+}
+
+func (handler *Handler) Config(args []string, store *datastore.Datastore) (any, bool) {
+	cmd := strings.ToUpper(args[0])
+	switch cmd {
+	case "GET":
+		if value, exist := config.GetConfigValue(args[1]); exist {
+			return []string{args[1], value.(string)}, true
+		}
+		return errors.New("configuration parameter not found"), true
+	default:
+		return errors.New("config subcommand not found"), true
+	}
 }

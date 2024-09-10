@@ -5,14 +5,13 @@ import (
 	"reflect"
 	"sync"
 
-	"github.com/Viet-ph/redis-go/core"
-	"github.com/Viet-ph/redis-go/internal/connection"
+	custom_err "github.com/Viet-ph/redis-go/internal/error"
 )
 
 // import "github.com/Viet-ph/redis-go/internal/connection"
 
 type Task struct {
-	conn     *connection.Conn
+	//conn     *connection.Conn
 	callback any
 	args     []any
 }
@@ -82,7 +81,7 @@ func (tq *TaskQueue) DrainQueue() {
 		err := task.Execute()
 		if err != nil {
 			fmt.Println("Error while executing task: " + err.Error())
-			if err == core.ErrorRequeueTask {
+			if err == custom_err.ErrorRequeueTask {
 				tq.tasks = append(tq.tasks, task)
 			} else {
 				fmt.Println("Task executed with failure.")

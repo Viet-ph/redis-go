@@ -6,9 +6,9 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/Viet-ph/redis-go/core/info"
-	"github.com/Viet-ph/redis-go/core/proto"
-	"github.com/Viet-ph/redis-go/datastore"
+	"github.com/Viet-ph/redis-go/internal/datastore"
+	"github.com/Viet-ph/redis-go/internal/info"
+	"github.com/Viet-ph/redis-go/internal/proto"
 )
 
 type Command struct {
@@ -25,8 +25,10 @@ type CmdMetaData struct {
 	handler func([]string, *datastore.Datastore) (any, bool)
 }
 
-func GetCommands(handler *Handler) map[string]CmdMetaData {
-	return map[string]CmdMetaData{
+var commands map[string]CmdMetaData
+
+func SetupCommands(handler *Handler) {
+	commands = map[string]CmdMetaData{
 		"PING": {
 			name: "PING",
 			description: `PING returns with an encoded "PONG" If any message is 
@@ -92,7 +94,17 @@ func GetCommands(handler *Handler) map[string]CmdMetaData {
 						 number of replicas were not yet reached.`,
 			handler: handler.Wait,
 		},
+		"CONFIG": {
+			name:        "CONFIG",
+			description: `This is a container command for runtime configuration commands.`,
+			handler:     handler.Config,
+		},
 	}
+}
+
+func GetCmdMetadata(cmdName string) (CmdMetaData, bool) {
+	metaData, exist := commands[cmdName]
+	return metaData, exist
 }
 
 func Parse(rawCmdBuf *bytes.Buffer) (Command, error) {
@@ -120,7 +132,7 @@ func ExecuteCmd(cmd Command, store *datastore.Datastore, handler *Handler) (any,
 		result any
 		ready  bool
 	)
-	if cmdMetaData, ok := GetCommands(handler)[cmd.Cmd]; ok {
+	if cmdMetaData, ok := GetCmdMetadata(cmd.Cmd); ok {
 		result, ready = cmdMetaData.handler(cmd.Args, store)
 		//fmt.Printf("Result after executed: %v\n", result)
 	} else {

@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/Viet-ph/redis-go/core"
+	custom_err "github.com/Viet-ph/redis-go/internal/error"
 )
 
 // Constants for RESP protocol
@@ -157,7 +157,7 @@ func (encoder *Encoder) Encode(data any, isSimple bool) error {
 
 func (encoder *Encoder) encodeError(err error) error {
 	var writeData string
-	if err == core.ErrorKeyNotExists {
+	if err == custom_err.ErrorKeyNotExists {
 		writeData = fmt.Sprintf("%c%d%s", BulkStringPrefix, -1, CRLF)
 	} else {
 		writeData = fmt.Sprintf("%c%s%s", ErrorPrefix, err.Error(), CRLF)

@@ -3,10 +3,9 @@ package command
 import (
 	"context"
 	"fmt"
-
-	"github.com/Viet-ph/redis-go/core"
-	"github.com/Viet-ph/redis-go/core/info"
-	"github.com/Viet-ph/redis-go/core/proto"
+	custom_err "github.com/Viet-ph/redis-go/internal/error"
+	"github.com/Viet-ph/redis-go/internal/info"
+	"github.com/Viet-ph/redis-go/internal/proto"
 	"github.com/Viet-ph/redis-go/internal/connection"
 )
 
@@ -21,9 +20,8 @@ type OffsTracker struct {
 // A map that hold OffsTracking counter for each client context
 var OffsTracking = make(map[*connection.Conn]*OffsTracker)
 
-func GetRepOffsets(numReplicas int, conn *connection.Conn, ctx context.Context) int {
+func GetRepOffsets(numReplicas int, offsTracker *OffsTracker, ctx context.Context) int {
 	totalAck := 0
-	offsTracker := OffsTracking[conn]
 	replicas := connection.GetReplicas()
 	cmd := []string{"REPLCONF", "GETACK", "*"}
 	encoder := proto.NewEncoder()
@@ -68,7 +66,7 @@ func respondWaitCmd(args ...any) error {
 		case int:
 			totalAcks = value
 		default:
-			return core.ErrorWrongCallBackArgumentType
+			return custom_err.ErrorWrongCallBackArgumentType
 		}
 	}
 

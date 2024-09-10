@@ -9,9 +9,9 @@ import (
 	"strings"
 
 	"github.com/Viet-ph/redis-go/config"
-	"github.com/Viet-ph/redis-go/core"
-	"github.com/Viet-ph/redis-go/core/info"
-	"github.com/Viet-ph/redis-go/core/proto"
+	"github.com/Viet-ph/redis-go/internal"
+	"github.com/Viet-ph/redis-go/internal/info"
+	"github.com/Viet-ph/redis-go/internal/proto"
 	"github.com/google/uuid"
 	"golang.org/x/sys/unix"
 )
@@ -175,7 +175,7 @@ func handleReSync(syncCmd []byte, conn net.Conn) error {
 	}
 	fmt.Println("Psync response: " + docodedResponse.(string))
 
-	core.RdbUnMarshall(RdbContainer)
+	internal.RdbUnMarshall(RdbContainer)
 
 	return nil
 }

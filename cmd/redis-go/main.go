@@ -6,8 +6,8 @@ import (
 	"os"
 
 	"github.com/Viet-ph/redis-go/config"
-	"github.com/Viet-ph/redis-go/core/info"
 	"github.com/Viet-ph/redis-go/internal/connection"
+	"github.com/Viet-ph/redis-go/internal/info"
 	"github.com/Viet-ph/redis-go/server"
 )
 
@@ -15,6 +15,8 @@ func setupFlags() {
 	flag.StringVar(&config.Host, "host", "0.0.0.0", "host for the redis server")
 	flag.StringVar(&info.Master, "replicaof", "", "master instance at <MASTER_HOST> <MASTER_PORT>")
 	flag.IntVar(&config.Port, "port", 6379, "port for the redis server")
+	flag.StringVar(&config.RdbDir, "dir", "./tmp/redis-files", "rdb file directory")
+	flag.StringVar(&config.RdbFileName, "dbfilename", "rdbfile", "rdb file directory")
 	flag.Parse()
 }
 

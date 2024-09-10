@@ -10,13 +10,14 @@ import (
 	"strings"
 
 	"github.com/Viet-ph/redis-go/config"
-	"github.com/Viet-ph/redis-go/core"
-	"github.com/Viet-ph/redis-go/core/command"
-	"github.com/Viet-ph/redis-go/core/info"
-	"github.com/Viet-ph/redis-go/core/proto"
+	"github.com/Viet-ph/redis-go/internal"
+	"github.com/Viet-ph/redis-go/internal/command"
+	custom_err "github.com/Viet-ph/redis-go/internal/error"
+	"github.com/Viet-ph/redis-go/internal/info"
+	"github.com/Viet-ph/redis-go/internal/proto"
 
-	"github.com/Viet-ph/redis-go/datastore"
 	"github.com/Viet-ph/redis-go/internal/connection"
+	"github.com/Viet-ph/redis-go/internal/datastore"
 	mul "github.com/Viet-ph/redis-go/internal/multiplexer"
 	"github.com/Viet-ph/redis-go/internal/queue"
 	"golang.org/x/sys/unix"
@@ -25,7 +26,6 @@ import (
 type AsyncServer struct {
 	iomultiplexer mul.Iomuliplexer
 	fd            int
-	maxClients    int
 	store         *datastore.Datastore
 	master        *connection.Conn
 	taskQueue     *queue.TaskQueue
@@ -59,9 +59,9 @@ func NewAsyncServer(masterConn *connection.Conn) (*AsyncServer, error) {
 
 	taskQueue := queue.NewTaskQueue()
 	handler := command.NewCmdHandler(taskQueue)
+	command.SetupCommands(handler)
 	return &AsyncServer{
 		fd:         serverFD,
-		maxClients: config.MaximumClients,
 		store:      datastore.NewDatastore(),
 		master:     masterConn,
 		taskQueue:  taskQueue,
@@ -73,7 +73,7 @@ func (server *AsyncServer) Start() {
 	defer server.close()
 
 	// Start listening
-	err := unix.Listen(server.fd, server.maxClients)
+	err := unix.Listen(server.fd, config.MaximumClients)
 	if err != nil {
 		fmt.Println("error while listening", err)
 		os.Exit(1)
@@ -83,7 +83,7 @@ func (server *AsyncServer) Start() {
 	fmt.Println("ready to accept connections")
 
 	// Create an epoll instance
-	server.iomultiplexer, err = mul.New(server.maxClients)
+	server.iomultiplexer, err = mul.New(config.MaximumClients)
 	if err != nil {
 		fmt.Println("Error creating epoll instance", err)
 		os.Exit(1)
@@ -253,7 +253,7 @@ func (server *AsyncServer) respond(conn *connection.Conn, cmd command.Command, r
 
 	//Queue datas to write and write immediately after
 	if strings.Contains(cmd.Cmd, "PSYNC") {
-		rdb, _ := core.RdbMarshall()
+		rdb, _ := internal.RdbMarshall()
 		err = conn.QueueDatas(byteSliceResult, rdb)
 		//fmt.Printf("Accepted replicatiobn: %d\n", conn.Fd)
 		server.promoteToSlave(conn)
@@ -279,7 +279,7 @@ func (server *AsyncServer) handleWritableEvent(conn *connection.Conn) {
 }
 
 func (server *AsyncServer) handleWritingError(err error, conn *connection.Conn) {
-	if err == core.ErrorNotFullyWritten {
+	if err == custom_err.ErrorNotFullyWritten {
 		//Data not fully written, resubscribe with write event and return to wait for write event
 		fmt.Printf("Got write error: %v\n", err.Error())
 		server.iomultiplexer.ModifyWatchingFd(conn.Fd, mul.OpWrite)

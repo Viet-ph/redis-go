@@ -2,7 +2,6 @@ package info
 
 import "github.com/google/uuid"
 
-
 var (
 	Master string = ""
 	Role   string = "master"

@@ -6,7 +6,7 @@ import (
 	"net"
 
 	"github.com/Viet-ph/redis-go/config"
-	"github.com/Viet-ph/redis-go/core"
+	custom_err "github.com/Viet-ph/redis-go/internal/error"
 	"golang.org/x/sys/unix"
 )
 
@@ -58,7 +58,7 @@ func (conn *Conn) Read(buf *bytes.Buffer) (int, error) {
 			//Certain errors like ECONNRESET or EPIPE during a read or write operation
 			//indicate that the client has forcefully closed the connection,
 			//server should handle these errors by cleaning up the client’s resources.
-			return -1, core.ErrorClientDisconnected
+			return -1, custom_err.ErrorClientDisconnected
 		}
 		if err != nil {
 			if err == unix.EAGAIN && buf.Len() > 0 {
@@ -69,7 +69,7 @@ func (conn *Conn) Read(buf *bytes.Buffer) (int, error) {
 				return 0, nil
 			}
 			// Handle other errors
-			return -1, core.ErrorReadingSocket
+			return -1, custom_err.ErrorReadingSocket
 		}
 
 		buf.Write(temp)
@@ -92,14 +92,14 @@ func (conn *Conn) DrainQueue() error {
 		if err != nil {
 			if err == unix.EAGAIN {
 				// Socket is not ready for writing, return and wait for write event
-				return core.ErrorNotFullyWritten
+				return custom_err.ErrorNotFullyWritten
 			}
 			return err
 		}
 		if n < len(data) {
 			// Partial write maybe due to network error, keep the remaining data in the queue
 			conn.writeQueue[0] = data[n:]
-			return core.ErrorNotFullyWritten
+			return custom_err.ErrorNotFullyWritten
 		}
 
 		// Full write, remove the data from the queue
