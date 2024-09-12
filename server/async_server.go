@@ -10,11 +10,11 @@ import (
 	"strings"
 
 	"github.com/Viet-ph/redis-go/config"
-	"github.com/Viet-ph/redis-go/internal"
 	"github.com/Viet-ph/redis-go/internal/command"
 	custom_err "github.com/Viet-ph/redis-go/internal/error"
 	"github.com/Viet-ph/redis-go/internal/info"
 	"github.com/Viet-ph/redis-go/internal/proto"
+	"github.com/Viet-ph/redis-go/internal/rdb"
 
 	"github.com/Viet-ph/redis-go/internal/connection"
 	"github.com/Viet-ph/redis-go/internal/datastore"
@@ -253,7 +253,7 @@ func (server *AsyncServer) respond(conn *connection.Conn, cmd command.Command, r
 
 	//Queue datas to write and write immediately after
 	if strings.Contains(cmd.Cmd, "PSYNC") {
-		rdb, _ := internal.RdbMarshall()
+		rdb, _ := rdb.RdbMarshall(server.store)
 		err = conn.QueueDatas(byteSliceResult, rdb)
 		//fmt.Printf("Accepted replicatiobn: %d\n", conn.Fd)
 		server.promoteToSlave(conn)

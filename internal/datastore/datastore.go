@@ -3,17 +3,22 @@ package datastore
 import (
 	"errors"
 	"fmt"
+	"math"
 	"slices"
+	"strconv"
 	"strings"
+	"time"
 )
 
 type Datastore struct {
-	store map[string]*data
+	store  map[string]*Data
+	expiry map[string]time.Time
 }
 
 func NewDatastore() *Datastore {
 	return &Datastore{
-		store: make(map[string]*data),
+		store:  make(map[string]*Data),
+		expiry: make(map[string]time.Time),
 	}
 }
 
@@ -50,18 +55,70 @@ func (ds *Datastore) setOptions(key string, options []string) error {
 }
 
 func (ds *Datastore) setDataExpiry(key, duration string, inMillisecond bool) error {
-	data := ds.store[key]
-	if data.hasExpiry {
+	// data := ds.store[key]
+	// if data.hasExpiry {
+	// 	return errors.New("syntax error")
+	// }
+	// fmt.Println("Setting expiry...")
+	// err := data.SetExpiry(duration, inMillisecond)
+	// fmt.Println(err)
+	// if err != nil {
+	// 	return err
+	// }
+
+	// return nil
+	if _, exist := ds.expiry[key]; exist {
 		return errors.New("syntax error")
 	}
-	fmt.Println("Setting expiry...")
-	err := data.SetExpiry(duration, inMillisecond)
-	fmt.Println(err)
-	if err != nil {
-		return err
+
+	var (
+		nanoseconds  int64
+		milliseconds int64
+		seconds      int64
+		err          error
+	)
+	if inMillisecond {
+		milliseconds, err = strconv.ParseInt(duration, 10, 64)
+		if err != nil { //|| milliseconds > int64(math.MaxInt64)/int64(time.Millisecond) {
+			fmt.Println(err)
+			return errors.New("value is not an integer or out of range")
+		}
+		nanoseconds = milliseconds * int64(time.Millisecond)
+	} else {
+		seconds, err = strconv.ParseInt(duration, 10, 64)
+		fmt.Println("duration time in seconds: " + strconv.Itoa(int(seconds)))
+		if err != nil || seconds > int64(math.MaxInt64)/int64(time.Second) {
+			return errors.New("value is not an integer or out of range")
+		}
+		nanoseconds = seconds * int64(time.Second)
 	}
 
+	// data.hasExpiry = true
+	ds.expiry[key] = time.Now().UTC().Add(time.Duration(nanoseconds))
 	return nil
+}
+
+// func (ds *Datastore) HasExpiry(key string) bool {
+// 	_, exist := ds.expiry[key]
+// 	return exist
+// }
+
+func (ds *Datastore) GetExpiry(key string) (time.Time, bool) {
+	expireAt, exist := ds.expiry[key]
+	if exist {
+		return expireAt, true
+	}
+
+	return time.Time{}, false
+}
+
+func (ds *Datastore) isExpired(key string) bool {
+	expireAt, exist := ds.expiry[key]
+	if exist {
+		return expireAt.Before(time.Now().UTC())
+	}
+
+	return false
 }
 
 func (ds *Datastore) Get(key string) (value any, exists bool) {
@@ -70,10 +127,19 @@ func (ds *Datastore) Get(key string) (value any, exists bool) {
 		return nil, false
 	}
 
-	if data.hasExpiry && data.isExpired() {
+	if ds.isExpired(key) {
 		delete(ds.store, key)
+		delete(ds.expiry, key)
 		return nil, false
 	}
 
 	return data.value, true
+}
+
+func (ds *Datastore) GetStoreSize() (int, int) {
+	return len(ds.store), len(ds.expiry)
+}
+
+func (ds *Datastore) GetStorage() map[string]*Data {
+	return ds.store
 }
