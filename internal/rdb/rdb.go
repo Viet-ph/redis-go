@@ -1,6 +1,7 @@
 package rdb
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/binary"
 
@@ -23,9 +24,9 @@ var GlobalEndian = binary.LittleEndian
 
 // Op codes
 const (
-	EOF          byte = 0xFF
-	SELECTDB     byte = 0xFE
-	EXPIRETIME   byte = 0xFD
+	EOF      byte = 0xFF
+	SELECTDB byte = 0xFE
+	//EXPIRETIME   byte = 0xFD
 	EXPIRETIMEMS byte = 0xFC
 	RESIZEDB     byte = 0xFB
 	AUX          byte = 0xFA
@@ -61,7 +62,7 @@ func RdbMarshall(ds *datastore.Datastore) ([]byte, error) {
 	var m runtime.MemStats
 	runtime.ReadMemStats(&m)
 	auxiliary, err := marshallAuxi(auxiliary{
-		redisVer:  "6.0.16",
+		redisVer:  config.RedisVer,
 		redisBits: strconv.Itoa(BitsPerWord),
 		ctime:     time.Now().UTC().String(),
 		usedMem:   strconv.Itoa(int(m.Alloc / 1024 / 1024)),
@@ -84,14 +85,89 @@ func RdbMarshall(ds *datastore.Datastore) ([]byte, error) {
 
 	return buf.Bytes(), nil
 }
-func RdbUnMarshall(rdb []byte) {
-	fmt.Println("Unmarshal RDB: " + string(rdb))
+
+func RdbUnMarshall(rdb []byte) (map[string]*datastore.Data, map[string]time.Time, error) {
+	buf := bytes.NewReader(rdb)
+
+	// Unmarshal header
+	header, err := unmarshalHeader(buf)
+	if err != nil {
+		return nil, nil, err
+	}
+	fmt.Println("Unmarshal RDB header: " + string(header))
+
+	// Unmarshal auxiliary data
+	auxi, err := unmarshalAuxi(buf)
+	if err != nil {
+		return nil, nil, err
+	}
+	fmt.Printf(
+		`Unmarshal RDB auxiliary:
+	redisVer: %s 
+	redisBits: %s
+	ctime: %s
+	memUsed: %s`,
+		auxi.redisVer, auxi.redisBits, auxi.ctime, auxi.usedMem)
+
+	// Unmarshal database
+	store, expiry, err := unmarshalDb(buf)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	//// Unmarshal footer
+	err = unmarshalFooter(buf)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return store, expiry, nil
 }
 
 func rdbExist() bool {
-	_, err := os.Stat(config.RdbDir)
+	rdbFilePath := config.RdbDir + "/" + config.RdbFileName + ".rdb"
+	_, err := os.Stat(rdbFilePath)
 	if err != nil {
 		return !errors.Is(err, os.ErrNotExist)
 	}
 	return true
+}
+
+func WriteRdbFile(rdbMarshalled []byte) error {
+	rdbFilePath := config.RdbDir + "/" + config.RdbFileName + ".rdb"
+	file, err := os.OpenFile(rdbFilePath, os.O_WRONLY|os.O_TRUNC, 0666)
+	if err != nil {
+		fmt.Println("Error opening file:", err)
+		return err
+	}
+	defer file.Close()
+
+	// Create a buffered writer
+	writer := bufio.NewWriter(file)
+
+	// Write content to the file
+	_, err = writer.Write(rdbMarshalled)
+	if err != nil {
+		fmt.Println("Error writing to file:", err)
+		return err
+	}
+
+	// Flush and close the writer
+	err = writer.Flush()
+	if err != nil {
+		fmt.Println("Error flushing writer:", err)
+		return err
+	}
+
+	return nil
+}
+
+func ReadRdbFile() ([]byte, error) {
+	if rdbExist() {
+		rdbFilePath := config.RdbDir + "/" + config.RdbFileName + ".rdb"
+		dat, err := os.ReadFile(rdbFilePath)
+		return dat, err
+	}
+
+	return nil, nil
 }

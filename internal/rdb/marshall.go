@@ -6,6 +6,7 @@ import (
 	"errors"
 	"strconv"
 
+	"github.com/Viet-ph/redis-go/config"
 	"github.com/Viet-ph/redis-go/internal/datastore"
 )
 
@@ -17,8 +18,7 @@ type auxiliary struct {
 }
 
 func marshallHeader() []byte {
-	version := "0011" // Redis RDB version 6 for example
-	header := "REDIS" + version
+	header := "REDIS" + config.RdbVer
 	return []byte(header)
 }
 
@@ -78,7 +78,7 @@ func marshallDb(ds *datastore.Datastore) ([]byte, error) {
 	for key, value := range ds.GetStorage() {
 		// "expiry time in ms", followed by 8 byte unsigned long
 		if expireAt, hasExpiry := ds.GetExpiry(key); hasExpiry {
-			buf.WriteByte(0xFC)
+			buf.WriteByte(EXPIRETIMEMS)
 			timestamp := expireAt.Unix()
 			binary.Write(&buf, GlobalEndian, timestamp)
 		}

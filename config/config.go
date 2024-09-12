@@ -4,6 +4,9 @@ var (
 	Host string = "0.0.0.0"
 	Port int    = 6379
 
+	RedisVer = "6.0.16"
+	RdbVer   = "0011"
+
 	DefaultMessageSize = 1024
 	MaximumClients     = 100
 	MaximumReplicas    = 100
