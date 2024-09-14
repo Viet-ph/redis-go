@@ -13,7 +13,7 @@ import (
 type Datastore struct {
 	store        map[string]*Data
 	expiry       map[string]time.Time
-	keysChangeCh chan struct{}
+	KeyChangesCh chan struct{}
 }
 
 func NewDatastore(store map[string]*Data, expiry map[string]time.Time) *Datastore {
@@ -25,8 +25,9 @@ func NewDatastore(store map[string]*Data, expiry map[string]time.Time) *Datastor
 		expiry = make(map[string]time.Time)
 	}
 	return &Datastore{
-		store:  store,
-		expiry: expiry,
+		store:        store,
+		expiry:       expiry,
+		KeyChangesCh: make(chan struct{}),
 	}
 }
 
@@ -39,7 +40,7 @@ func (ds *Datastore) Set(key string, value any, options []string) error {
 			return err
 		}
 	}
-	//ds.keysChangeCh <- struct{}{}
+	ds.KeyChangesCh <- struct{}{}
 	return nil
 }
 
@@ -127,7 +128,7 @@ func (ds *Datastore) Get(key string) (value any, exists bool) {
 }
 
 func (ds *Datastore) Del(key string) {
-	ds.keysChangeCh <- struct{}{}
+	ds.KeyChangesCh <- struct{}{}
 	delete(ds.store, key)
 	delete(ds.expiry, key)
 }
@@ -138,13 +139,4 @@ func (ds *Datastore) GetStoreSize() (int, int) {
 
 func (ds *Datastore) GetStorage() map[string]*Data {
 	return ds.store
-}
-
-func (ds *Datastore) persistData() {
-	numKeysChanged := 0
-	go func() {
-		for _ = range ds.keysChangeCh {
-			numKeysChanged++
-		}
-	}()
 }

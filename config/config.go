@@ -15,8 +15,8 @@ var (
 	RdbFileName string
 
 	//Persistence
-	numKeyChanged = 5
-	interval      = 60
+	NumKeyChanges = 1
+	Interval      = 10
 )
 
 func GetConfigValue(cfgName string) (any, bool) {

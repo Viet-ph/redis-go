@@ -80,13 +80,17 @@ func NewAsyncServer(masterConn *connection.Conn) (*AsyncServer, error) {
 		fmt.Println(storage)
 	}
 
-	return &AsyncServer{
+	server := &AsyncServer{
 		fd:         serverFD,
 		store:      datastore.NewDatastore(storage, expiry),
 		master:     masterConn,
 		taskQueue:  taskQueue,
 		cmdHandler: handler,
-	}, nil
+	}
+
+	rdb.PersistData(server.store)
+
+	return server, nil
 }
 
 func (server *AsyncServer) Start() {

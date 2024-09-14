@@ -141,7 +141,6 @@ func rdbExist() bool {
 }
 
 func WriteRdbFile(rdbMarshalled []byte) error {
-
 	rdbFilePath := config.RdbDir + "/" + config.RdbFileName + ".rdb"
 	file, err := os.OpenFile(rdbFilePath, os.O_WRONLY|os.O_TRUNC|os.O_CREATE, 0666)
 	if err != nil {
@@ -232,4 +231,35 @@ func ReadRdbFile() ([]byte, error) {
 			data = d[:len(data)]
 		}
 	}
+}
+
+func PersistData(ds *datastore.Datastore) {
+	numKeyChanges := 0
+	ticker := time.NewTicker(time.Duration(config.Interval) * time.Second)
+	go func() {
+		for {
+			select {
+			case <-ds.KeyChangesCh:
+				numKeyChanges++
+			case <-ticker.C:
+				if numKeyChanges >= config.NumKeyChanges {
+					fmt.Println("Saving RDB...")
+					// Fork a child process
+					id, _, _ := unix.Syscall(unix.SYS_FORK, 0, 0, 0)
+
+					// In child process
+					if id == 0 {
+						rdbMarshalled, err := RdbMarshall(ds)
+						if err != nil {
+							fmt.Println(err.Error())
+						}
+						err = WriteRdbFile(rdbMarshalled)
+						if err != nil {
+							fmt.Println(err.Error())
+						}
+					}
+				}
+			}
+		}
+	}()
 }

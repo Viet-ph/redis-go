@@ -223,7 +223,7 @@ func unmarshalLength(buf *bytes.Reader) (int, stringFormat, error) {
 	if err != nil {
 		return 0, LengthPrefixed, err
 	}
-	fmt.Printf("Length encoding: %d - %b\n", firstByte, firstByte)
+	//fmt.Printf("Length encoding: %d - %b\n", firstByte, firstByte)
 
 	// Check first two bits
 	sizeEncodingBits := firstByte >> 6
