@@ -11,8 +11,9 @@ import (
 )
 
 type Datastore struct {
-	store  map[string]*Data
-	expiry map[string]time.Time
+	store        map[string]*Data
+	expiry       map[string]time.Time
+	keysChangeCh chan struct{}
 }
 
 func NewDatastore(store map[string]*Data, expiry map[string]time.Time) *Datastore {
@@ -38,7 +39,7 @@ func (ds *Datastore) Set(key string, value any, options []string) error {
 			return err
 		}
 	}
-
+	//ds.keysChangeCh <- struct{}{}
 	return nil
 }
 
@@ -62,18 +63,6 @@ func (ds *Datastore) setOptions(key string, options []string) error {
 }
 
 func (ds *Datastore) setDataExpiry(key, duration string, inMillisecond bool) error {
-	// data := ds.store[key]
-	// if data.hasExpiry {
-	// 	return errors.New("syntax error")
-	// }
-	// fmt.Println("Setting expiry...")
-	// err := data.SetExpiry(duration, inMillisecond)
-	// fmt.Println(err)
-	// if err != nil {
-	// 	return err
-	// }
-
-	// return nil
 	if _, exist := ds.expiry[key]; exist {
 		return errors.New("syntax error")
 	}
@@ -105,11 +94,6 @@ func (ds *Datastore) setDataExpiry(key, duration string, inMillisecond bool) err
 	return nil
 }
 
-// func (ds *Datastore) HasExpiry(key string) bool {
-// 	_, exist := ds.expiry[key]
-// 	return exist
-// }
-
 func (ds *Datastore) GetExpiry(key string) (time.Time, bool) {
 	expireAt, exist := ds.expiry[key]
 	if exist {
@@ -119,7 +103,7 @@ func (ds *Datastore) GetExpiry(key string) (time.Time, bool) {
 	return time.Time{}, false
 }
 
-func (ds *Datastore) isExpired(key string) bool {
+func (ds *Datastore) IsExpired(key string) bool {
 	expireAt, exist := ds.expiry[key]
 	if exist {
 		return expireAt.Before(time.Now().UTC())
@@ -134,13 +118,18 @@ func (ds *Datastore) Get(key string) (value any, exists bool) {
 		return nil, false
 	}
 
-	if ds.isExpired(key) {
-		delete(ds.store, key)
-		delete(ds.expiry, key)
+	if ds.IsExpired(key) {
+		ds.Del(key)
 		return nil, false
 	}
 
 	return data.value, true
+}
+
+func (ds *Datastore) Del(key string) {
+	ds.keysChangeCh <- struct{}{}
+	delete(ds.store, key)
+	delete(ds.expiry, key)
 }
 
 func (ds *Datastore) GetStoreSize() (int, int) {
@@ -149,4 +138,13 @@ func (ds *Datastore) GetStoreSize() (int, int) {
 
 func (ds *Datastore) GetStorage() map[string]*Data {
 	return ds.store
+}
+
+func (ds *Datastore) persistData() {
+	numKeysChanged := 0
+	go func() {
+		for _ = range ds.keysChangeCh {
+			numKeysChanged++
+		}
+	}()
 }

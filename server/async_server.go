@@ -239,7 +239,7 @@ func (server *AsyncServer) handleReadableEvent(conn *connection.Conn) error {
 	}
 
 	//Execute command
-	result, readyToRespond := command.ExecuteCmd(cmd, server.store, server.cmdHandler)
+	result, readyToRespond := command.ExecuteCmd(cmd, server.store)
 
 	//Send result as response back to client and handle any possible errors
 	if readyToRespond {

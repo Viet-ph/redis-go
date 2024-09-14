@@ -100,9 +100,16 @@ func SetupCommands(handler *Handler) {
 			handler:     handler.Config,
 		},
 		"SAVE": {
-			name:        "SAVE",
-			description: `This is a container command for runtime configuration commands.`,
-			handler:     handler.Save,
+			name: "SAVE",
+			description: `The SAVE commands performs a synchronous save of the dataset producing a point 
+						in time snapshot of all the data inside the Redis instance, in the form of an RDB file.`,
+			handler: handler.Save,
+		},
+		"BGSAVE": {
+			name: "BGSAVE",
+			description: `Save the DB in background. Normally the OK code is immediately returned. 
+						Redis forks, the parent continues to serve the clients, the child saves the DB on disk then exits.`,
+			handler: handler.Save,
 		},
 	}
 }
@@ -132,7 +139,7 @@ func Parse(rawCmdBuf *bytes.Buffer) (Command, error) {
 	}, nil
 }
 
-func ExecuteCmd(cmd Command, store *datastore.Datastore, handler *Handler) (any, bool) {
+func ExecuteCmd(cmd Command, store *datastore.Datastore) (any, bool) {
 	var (
 		result any
 		ready  bool

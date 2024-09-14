@@ -180,12 +180,12 @@ func unmarshalDb(buf *bytes.Reader) (map[string]*datastore.Data, map[string]time
 }
 
 func unmarshalString(buf *bytes.Reader) (string, error) {
-	length, stringfm, err := unmarshalLength(buf)
+	length, stringFormat, err := unmarshalLength(buf)
 	if err != nil {
 		return "", err
 	}
 
-	switch stringfm {
+	switch stringFormat {
 	case LengthPrefixed:
 		stringData := make([]byte, length)
 		_, err = buf.Read(stringData)

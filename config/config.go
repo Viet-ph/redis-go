@@ -13,6 +13,10 @@ var (
 
 	RdbDir      string
 	RdbFileName string
+
+	//Persistence
+	numKeyChanged = 5
+	interval      = 60
 )
 
 func GetConfigValue(cfgName string) (any, bool) {

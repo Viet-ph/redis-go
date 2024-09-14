@@ -79,6 +79,10 @@ func marshallDb(ds *datastore.Datastore) ([]byte, error) {
 	for key, data := range storage {
 		// "expiry time in ms", followed by 8 byte unsigned long
 		if expireAt, hasExpiry := ds.GetExpiry(key); hasExpiry {
+			//If data is already expired, skip it
+			if ds.IsExpired(key) {
+				continue
+			}
 			buf.WriteByte(EXPIRETIMEMS)
 			timestamp := expireAt.Unix()
 			binary.Write(&buf, GlobalEndian, timestamp)
