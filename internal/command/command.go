@@ -99,6 +99,11 @@ func SetupCommands(handler *Handler) {
 			description: `This is a container command for runtime configuration commands.`,
 			handler:     handler.Config,
 		},
+		"SAVE": {
+			name:        "SAVE",
+			description: `This is a container command for runtime configuration commands.`,
+			handler:     handler.Save,
+		},
 	}
 }
 

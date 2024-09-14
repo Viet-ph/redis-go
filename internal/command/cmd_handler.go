@@ -14,6 +14,7 @@ import (
 	custom_err "github.com/Viet-ph/redis-go/internal/error"
 	"github.com/Viet-ph/redis-go/internal/info"
 	"github.com/Viet-ph/redis-go/internal/queue"
+	"github.com/Viet-ph/redis-go/internal/rdb"
 )
 
 type hmap map[string]string
@@ -251,4 +252,17 @@ func (handler *Handler) Config(args []string, store *datastore.Datastore) (any, 
 	default:
 		return errors.New("config subcommand not found"), true
 	}
+}
+
+func (handler *Handler) Save(args []string, store *datastore.Datastore) (any, bool) {
+	rdbMarshalled, err := rdb.RdbMarshall(store)
+	if err != nil {
+		fmt.Println(err.Error())
+	}
+	err = rdb.WriteRdbFile(rdbMarshalled)
+	if err != nil {
+		fmt.Println(err.Error())
+	}
+
+	return "OK", true
 }

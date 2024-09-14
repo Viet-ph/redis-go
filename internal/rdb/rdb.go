@@ -57,6 +57,7 @@ func RdbMarshall(ds *datastore.Datastore) ([]byte, error) {
 	// Marshall header
 	header := marshallHeader()
 	buf.Write(header)
+	fmt.Println("Rdb header: " + string(header))
 
 	// Marshall auxiliary
 	var m runtime.MemStats
@@ -82,6 +83,8 @@ func RdbMarshall(ds *datastore.Datastore) ([]byte, error) {
 	// Marshall footer
 	footer := marshallFooter()
 	buf.Write(footer)
+
+	fmt.Println("RDB: " + buf.String())
 
 	return buf.Bytes(), nil
 }
@@ -135,7 +138,7 @@ func rdbExist() bool {
 
 func WriteRdbFile(rdbMarshalled []byte) error {
 	rdbFilePath := config.RdbDir + "/" + config.RdbFileName + ".rdb"
-	file, err := os.OpenFile(rdbFilePath, os.O_WRONLY|os.O_TRUNC, 0666)
+	file, err := os.OpenFile(rdbFilePath, os.O_WRONLY|os.O_TRUNC|os.O_CREATE, 0666)
 	if err != nil {
 		fmt.Println("Error opening file:", err)
 		return err
@@ -168,6 +171,5 @@ func ReadRdbFile() ([]byte, error) {
 		dat, err := os.ReadFile(rdbFilePath)
 		return dat, err
 	}
-
 	return nil, nil
 }

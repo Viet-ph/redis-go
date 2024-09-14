@@ -8,6 +8,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/Viet-ph/redis-go/config"
 	"github.com/Viet-ph/redis-go/internal/command"
@@ -60,9 +61,28 @@ func NewAsyncServer(masterConn *connection.Conn) (*AsyncServer, error) {
 	taskQueue := queue.NewTaskQueue()
 	handler := command.NewCmdHandler(taskQueue)
 	command.SetupCommands(handler)
+
+	// Read and unmarshall RDB file if has any
+	var (
+		expiry  map[string]time.Time
+		storage map[string]*datastore.Data
+	)
+	rawRdb, err := rdb.ReadRdbFile()
+	if err != nil {
+		return nil, err
+	}
+
+	if len(rawRdb) != 0 {
+		storage, expiry, err = rdb.RdbUnMarshall(rawRdb)
+		if err != nil {
+			return nil, err
+		}
+		fmt.Println(storage)
+	}
+
 	return &AsyncServer{
 		fd:         serverFD,
-		store:      datastore.NewDatastore(),
+		store:      datastore.NewDatastore(storage, expiry),
 		master:     masterConn,
 		taskQueue:  taskQueue,
 		cmdHandler: handler,
@@ -253,8 +273,8 @@ func (server *AsyncServer) respond(conn *connection.Conn, cmd command.Command, r
 
 	//Queue datas to write and write immediately after
 	if strings.Contains(cmd.Cmd, "PSYNC") {
-		rdb, _ := rdb.RdbMarshall(server.store)
-		err = conn.QueueDatas(byteSliceResult, rdb)
+		//rdb, _ := rdb.RdbMarshall(server.store)
+		//err = conn.QueueDatas(byteSliceResult, rdb)
 		//fmt.Printf("Accepted replicatiobn: %d\n", conn.Fd)
 		server.promoteToSlave(conn)
 	} else {

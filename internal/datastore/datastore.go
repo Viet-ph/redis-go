@@ -15,10 +15,17 @@ type Datastore struct {
 	expiry map[string]time.Time
 }
 
-func NewDatastore() *Datastore {
+func NewDatastore(store map[string]*Data, expiry map[string]time.Time) *Datastore {
+	if store == nil {
+		store = make(map[string]*Data)
+	}
+
+	if expiry == nil {
+		expiry = make(map[string]time.Time)
+	}
 	return &Datastore{
-		store:  make(map[string]*Data),
-		expiry: make(map[string]time.Time),
+		store:  store,
+		expiry: expiry,
 	}
 }
 

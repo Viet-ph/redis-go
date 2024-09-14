@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"strconv"
 	"time"
 
@@ -50,21 +51,25 @@ func unmarshalAuxi(buf *bytes.Reader) (auxiliary, error) {
 	if err != nil {
 		return auxi, err
 	}
+	fmt.Println("Redis-ver: " + auxi.redisVer)
 
 	auxi.redisBits, err = unmarshalString(buf)
 	if err != nil {
 		return auxi, err
 	}
+	fmt.Println("Redis-bits: " + auxi.redisBits)
 
 	auxi.ctime, err = unmarshalString(buf)
 	if err != nil {
 		return auxi, err
 	}
+	fmt.Println("ctime: " + auxi.ctime)
 
 	auxi.usedMem, err = unmarshalString(buf)
 	if err != nil {
 		return auxi, err
 	}
+	fmt.Println("Used Memory: " + auxi.usedMem)
 
 	return auxi, nil
 }
@@ -218,6 +223,7 @@ func unmarshalLength(buf *bytes.Reader) (int, stringFormat, error) {
 	if err != nil {
 		return 0, LengthPrefixed, err
 	}
+	fmt.Printf("Length encoding: %d - %b\n", firstByte, firstByte)
 
 	// Check first two bits
 	sizeEncodingBits := firstByte >> 6
@@ -241,7 +247,7 @@ func unmarshalLength(buf *bytes.Reader) (int, stringFormat, error) {
 			return 0, LengthPrefixed, err
 		}
 		return int(length), LengthPrefixed, nil
-	case 0xC0:
+	case 0x03:
 		// Special encoding (11)
 		format := firstByte & 0x3F
 		switch format {
@@ -249,7 +255,7 @@ func unmarshalLength(buf *bytes.Reader) (int, stringFormat, error) {
 			return 1, Int8, nil
 		case 1:
 			return 2, Int16, nil
-		case 3:
+		case 2:
 			return 4, Int32, nil
 		}
 	default:
