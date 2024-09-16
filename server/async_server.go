@@ -33,7 +33,7 @@ type AsyncServer struct {
 	cmdHandler    *command.Handler
 }
 
-func NewAsyncServer(masterConn *connection.Conn) (*AsyncServer, error) {
+func NewAsyncServer(masterConn *connection.Conn, masterDatastore *datastore.Datastore) (*AsyncServer, error) {
 	serverFD, err := unix.Socket(unix.AF_INET, unix.SOCK_STREAM, 0)
 	if err != nil {
 		return &AsyncServer{}, err
@@ -62,33 +62,41 @@ func NewAsyncServer(masterConn *connection.Conn) (*AsyncServer, error) {
 	handler := command.NewCmdHandler(taskQueue)
 	command.SetupCommands(handler)
 
-	// Read and unmarshall RDB file if has any
+	// Master instance should read and unmarshall RDB file if has any
 	var (
 		expiry  map[string]time.Time
 		storage map[string]*datastore.Data
+		ds      *datastore.Datastore
 	)
-	rawRdb, err := rdb.ReadRdbFile()
-	if err != nil {
-		return nil, err
-	}
-
-	if len(rawRdb) != 0 {
-		storage, expiry, err = rdb.RdbUnMarshall(rawRdb)
+	if masterConn == nil && masterDatastore == nil {
+		rawRdb, err := rdb.ReadRdbFile()
 		if err != nil {
 			return nil, err
 		}
-		fmt.Println(storage)
+
+		if len(rawRdb) != 0 {
+			storage, expiry, err = rdb.RdbUnMarshall(rawRdb)
+			if err != nil {
+				return nil, err
+			}
+			fmt.Println(storage)
+		} else {
+			storage = make(map[string]*datastore.Data)
+			expiry = make(map[string]time.Time)
+		}
+		ds = datastore.NewDatastore(storage, expiry)
+		rdb.PersistData(ds)
+	} else {
+		ds = masterDatastore
 	}
 
 	server := &AsyncServer{
 		fd:         serverFD,
-		store:      datastore.NewDatastore(storage, expiry),
+		store:      ds,
 		master:     masterConn,
 		taskQueue:  taskQueue,
 		cmdHandler: handler,
 	}
-
-	rdb.PersistData(server.store)
 
 	return server, nil
 }
@@ -277,9 +285,12 @@ func (server *AsyncServer) respond(conn *connection.Conn, cmd command.Command, r
 
 	//Queue datas to write and write immediately after
 	if strings.Contains(cmd.Cmd, "PSYNC") {
-		//rdb, _ := rdb.RdbMarshall(server.store)
-		//err = conn.QueueDatas(byteSliceResult, rdb)
-		//fmt.Printf("Accepted replicatiobn: %d\n", conn.Fd)
+		rawRdb, _ := rdb.ReadRdbFile()
+		if len(rawRdb) == 0 {
+			rawRdb, _ = rdb.RdbMarshall(server.store)
+		}
+		err = conn.QueueDatas(byteSliceResult, rawRdb)
+		fmt.Printf("Accepted replicatiobn: %d\n", conn.Fd)
 		server.promoteToSlave(conn)
 	} else {
 		err = conn.QueueDatas(byteSliceResult)

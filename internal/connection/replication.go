@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/Viet-ph/redis-go/config"
+	"github.com/Viet-ph/redis-go/internal/datastore"
 	"github.com/Viet-ph/redis-go/internal/info"
 	"github.com/Viet-ph/redis-go/internal/proto"
 	"github.com/Viet-ph/redis-go/internal/rdb"
@@ -48,36 +49,39 @@ func (rep *Replica) SetOffset(offs int) {
 	rep.offset = offs
 }
 
-func SetupMasterSlave() (net.Conn, error) {
+func SetupMasterSlave() (net.Conn, *datastore.Datastore, error) {
 	fmt.Println("Setting master-slave...")
 	info.ReplicationId = uuid.New()
 	info.ReplicationOffset = 0
+
+	// Set instance info as slave
 	if len(info.Master) > 0 {
 		masterSocket := strings.Split(info.Master, " ")
 		if len(masterSocket) != 2 {
-			return nil, errors.New("incorrect master IP address or PORT")
+			return nil, nil, errors.New("incorrect master IP address or PORT")
 		}
 		info.Role = "slave"
 		info.MasterHost = masterSocket[0]
 		info.MasterPort, _ = strconv.Atoi(masterSocket[1])
 
 		fmt.Println("Pinging master ...")
-		conn, err := doHandShake()
+		conn, datastore, err := doHandShake()
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
-		return conn, nil
+		return conn, datastore, nil
 	}
 
-	return nil, nil
+	// return nothing if instance is master
+	return nil, nil, nil
 }
 
 // Synchronous behavior, means write or read -> master will block the current goroutine
-func doHandShake() (net.Conn, error) {
+func doHandShake() (net.Conn, *datastore.Datastore, error) {
 	address := fmt.Sprintf("%s:%d", info.MasterHost, info.MasterPort)
 	conn, err := net.Dial("tcp", address)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	masterAddr := conn.RemoteAddr().String()
@@ -96,30 +100,30 @@ func doHandShake() (net.Conn, error) {
 	//Ping
 	response, err := sendHandshake(conn, handShakeCommands["PING"])
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	fmt.Println("Ping response: " + response.(string))
 
 	//Rep config 1
 	response, err = sendHandshake(conn, handShakeCommands["REPLCONF 1"])
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	fmt.Println("Rep config 1 response: " + response.(string))
 
 	//Rep config 2
 	response, err = sendHandshake(conn, handShakeCommands["REPLCONF 2"])
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	fmt.Println("Rep config 2 response: " + response.(string))
 
 	//PSYNC
-	err = handleReSync([]byte(handShakeCommands["PSYNC"]), conn)
+	datastore, err := handleReSync([]byte(handShakeCommands["PSYNC"]), conn)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return conn, nil
+	return conn, datastore, nil
 }
 
 // Goroutine blocking operation
@@ -143,16 +147,16 @@ func sendHandshake(conn net.Conn, data string) (response any, err error) {
 	return decodedResponse, nil
 }
 
-func handleReSync(syncCmd []byte, conn net.Conn) error {
+func handleReSync(syncCmd []byte, conn net.Conn) (*datastore.Datastore, error) {
 	_, err := conn.Write(syncCmd)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	container := make([]byte, config.DefaultMessageSize)
 	n, err := conn.Read(container)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	crlf := bytes.Index(container, []byte{'\r', '\n'})
 	syncResponse := container[:crlf+2]
@@ -164,20 +168,24 @@ func handleReSync(syncCmd []byte, conn net.Conn) error {
 		RdbContainer = make([]byte, config.DefaultMessageSize)
 		_, err := conn.Read(RdbContainer)
 		if err != nil {
-			return err
+			return nil, err
 		}
 	}
 
 	decoder := proto.NewDecoder(bytes.NewBuffer([]byte(syncResponse)))
 	docodedResponse, err := decoder.Decode()
 	if err != nil {
-		return err
+		return nil, err
 	}
 	fmt.Println("Psync response: " + docodedResponse.(string))
 
-	rdb.RdbUnMarshall(RdbContainer)
+	storage, expiry, err := rdb.RdbUnMarshall(RdbContainer)
+	if err != nil {
+		return nil, err
+	}
+	fmt.Println(storage)
 
-	return nil
+	return datastore.NewDatastore(storage, expiry), nil
 }
 
 func getFileDescriptor(conn net.Conn) (int, error) {

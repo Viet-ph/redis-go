@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"strconv"
 
 	"github.com/Viet-ph/redis-go/config"
@@ -54,31 +55,31 @@ func marshallAuxi(auxi auxiliary) ([]byte, error) {
 
 func marshallDb(ds *datastore.Datastore) ([]byte, error) {
 	var buf bytes.Buffer
+	store, expiry := ds.DeepCopy()
 
 	// Indicates the start of a database subsection.
 	buf.Write([]byte{SELECTDB, 0x00})
 
 	// Indicates that key-value hash table size information follows.
 	buf.WriteByte(RESIZEDB)
-	storeSize, expirySize := ds.GetStoreSize()
-	encodedStoreSize, err := getLenghEncoding(uint32(storeSize), LengthPrefixed)
+	encodedStoreSize, err := getLenghEncoding(uint32(len(store)), LengthPrefixed)
 	if err != nil {
 		return nil, err
 	}
 	buf.Write(encodedStoreSize)
 
 	// Indicates that expiry hash table table size information follows.
-	encodedExpirySize, err := getLenghEncoding(uint32(expirySize), LengthPrefixed)
+	encodedExpirySize, err := getLenghEncoding(uint32(len(expiry)), LengthPrefixed)
 	if err != nil {
 		return nil, err
 	}
 	buf.Write(encodedExpirySize)
 
 	// Key-Value pair starts
-	storage := ds.GetStorage()
-	for key, data := range storage {
+
+	for key, data := range store {
 		// "expiry time in ms", followed by 8 byte unsigned long
-		if expireAt, hasExpiry := ds.GetExpiry(key); hasExpiry {
+		if expireAt, hasExpiry := expiry[key]; hasExpiry {
 			//If data is already expired, skip it
 			if ds.IsExpired(key) {
 				continue
@@ -134,15 +135,15 @@ func marshallKeyValue(key string, value any) ([]byte, error) {
 func marshallString(data string, stringfm stringFormat) ([]byte, error) {
 	var buf bytes.Buffer
 	length := len(data)
-	lengthmarshalld, err := getLenghEncoding(uint32(length), stringfm)
+	lengthmarshalled, err := getLenghEncoding(uint32(length), stringfm)
 	if err != nil {
 		return nil, err
 	}
 
 	if stringfm == LengthPrefixed {
-		buf.Write(append(lengthmarshalld, []byte(data)...))
+		buf.Write(append(lengthmarshalled, []byte(data)...))
 	} else {
-		buf.Write(lengthmarshalld)
+		buf.Write(lengthmarshalled)
 		switch stringfm {
 		case Int8:
 			int8Val, _ := strconv.Atoi(data)
@@ -160,6 +161,7 @@ func marshallString(data string, stringfm stringFormat) ([]byte, error) {
 		}
 	}
 
+	fmt.Printf("Marshalled %s - %d bytes\n", data, buf.Len())
 	return buf.Bytes(), nil
 }
 

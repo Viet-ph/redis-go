@@ -26,7 +26,7 @@ func main() {
 	flag.PrintDefaults()
 
 	fmt.Println("Setting up master/slave ...")
-	netConn, err := connection.SetupMasterSlave()
+	masterNetConn, datastore, err := connection.SetupMasterSlave()
 	if err != nil {
 		fmt.Println(err)
 		os.Exit(1)
@@ -34,18 +34,18 @@ func main() {
 	fmt.Println("Master/slave setup done.")
 
 	var srv *server.AsyncServer
-	if netConn != nil {
+	if masterNetConn != nil {
 		fmt.Println("Starting slave server ...")
 		var masterConn *connection.Conn
-		masterConn, err = connection.NetConnToConn(netConn)
+		masterConn, err = connection.NetConnToConn(masterNetConn)
 		if err != nil {
 			fmt.Println("error getting connection to master instance: " + err.Error())
 			os.Exit(1)
 		}
-		srv, err = server.NewAsyncServer(masterConn)
+		srv, err = server.NewAsyncServer(masterConn, datastore)
 	} else {
 		fmt.Println("Starting master server ...")
-		srv, err = server.NewAsyncServer(nil)
+		srv, err = server.NewAsyncServer(nil, nil)
 	}
 	if err != nil {
 		fmt.Println(err)

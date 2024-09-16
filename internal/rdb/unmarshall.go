@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/binary"
 	"errors"
-	"fmt"
 	"strconv"
 	"time"
 
@@ -51,25 +50,25 @@ func unmarshalAuxi(buf *bytes.Reader) (auxiliary, error) {
 	if err != nil {
 		return auxi, err
 	}
-	fmt.Println("Redis-ver: " + auxi.redisVer)
+	//fmt.Println("Redis-ver: " + auxi.redisVer)
 
 	auxi.redisBits, err = unmarshalString(buf)
 	if err != nil {
 		return auxi, err
 	}
-	fmt.Println("Redis-bits: " + auxi.redisBits)
+	//fmt.Println("Redis-bits: " + auxi.redisBits)
 
 	auxi.ctime, err = unmarshalString(buf)
 	if err != nil {
 		return auxi, err
 	}
-	fmt.Println("ctime: " + auxi.ctime)
+	//fmt.Println("ctime: " + auxi.ctime)
 
 	auxi.usedMem, err = unmarshalString(buf)
 	if err != nil {
 		return auxi, err
 	}
-	fmt.Println("Used Memory: " + auxi.usedMem)
+	//fmt.Println("Used Memory: " + auxi.usedMem)
 
 	return auxi, nil
 }
@@ -198,6 +197,7 @@ func unmarshalString(buf *bytes.Reader) (string, error) {
 		if err != nil {
 			return "", err
 		}
+		//fmt.Printf("Is Int8: %d\n", int(int8Val))
 		return strconv.Itoa(int(int8Val)), nil
 	case Int16:
 		var int16Val int16
@@ -205,6 +205,7 @@ func unmarshalString(buf *bytes.Reader) (string, error) {
 		if err != nil {
 			return "", err
 		}
+		//fmt.Printf("Is Int16: %d\n", int(int16Val))
 		return strconv.Itoa(int(int16Val)), nil
 	case Int32:
 		var int32Val int32
@@ -212,6 +213,7 @@ func unmarshalString(buf *bytes.Reader) (string, error) {
 		if err != nil {
 			return "", err
 		}
+		//fmt.Printf("Is Int32: %d\n", int(int32Val))
 		return strconv.Itoa(int(int32Val)), nil
 	default:
 		return "", errors.New("unknown string format")

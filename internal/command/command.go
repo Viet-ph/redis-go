@@ -109,7 +109,7 @@ func SetupCommands(handler *Handler) {
 			name: "BGSAVE",
 			description: `Save the DB in background. Normally the OK code is immediately returned. 
 						Redis forks, the parent continues to serve the clients, the child saves the DB on disk then exits.`,
-			handler: handler.Save,
+			handler: handler.BgSave,
 		},
 	}
 }

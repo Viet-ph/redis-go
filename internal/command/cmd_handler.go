@@ -15,7 +15,6 @@ import (
 	"github.com/Viet-ph/redis-go/internal/info"
 	"github.com/Viet-ph/redis-go/internal/queue"
 	"github.com/Viet-ph/redis-go/internal/rdb"
-	"golang.org/x/sys/unix"
 )
 
 type hmap map[string]string
@@ -268,12 +267,8 @@ func (handler *Handler) Save(args []string, store *datastore.Datastore) (any, bo
 }
 
 func (handler *Handler) BgSave(args []string, store *datastore.Datastore) (any, bool) {
-	// Fork child process
-	id, _, _ := unix.Syscall(unix.SYS_FORK, 0, 0, 0)
-
-	// In child process
-	if id == 0 {
+	go func() {
 		handler.Save(args, store)
-	}
+	}()
 	return "OK", true
 }

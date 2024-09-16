@@ -16,7 +16,7 @@ var (
 
 	//Persistence
 	NumKeyChanges = 1
-	Interval      = 10
+	Interval      = 30 //seconds
 )
 
 func GetConfigValue(cfgName string) (any, bool) {

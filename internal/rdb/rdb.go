@@ -3,6 +3,7 @@ package rdb
 import (
 	"bytes"
 	"encoding/binary"
+	"encoding/hex"
 	"io"
 
 	//"encoding/hex"
@@ -46,19 +47,11 @@ const (
 const BitsPerWord = 32 << (^uint(0) >> 63)
 
 func RdbMarshall(ds *datastore.Datastore) ([]byte, error) {
-	// content, err := hex.DecodeString(EmptyRdbHexString)
-	// if err != nil {
-	// 	return nil, err
-	// }
-
-	// length := fmt.Sprintf("$%d\r\n", len(content))
-	// bytes := append([]byte(length), content...)
 	var buf bytes.Buffer
 
 	// Marshall header
 	header := marshallHeader()
 	buf.Write(header)
-	fmt.Println("Rdb header: " + string(header))
 
 	// Marshall auxiliary
 	var m runtime.MemStats
@@ -85,7 +78,7 @@ func RdbMarshall(ds *datastore.Datastore) ([]byte, error) {
 	footer := marshallFooter()
 	buf.Write(footer)
 
-	fmt.Println("RDB: " + buf.String())
+	fmt.Printf("RDB len: %d\n", len(buf.Bytes()))
 
 	return buf.Bytes(), nil
 }
@@ -149,7 +142,7 @@ func WriteRdbFile(rdbMarshalled []byte) error {
 	}
 	defer file.Close()
 
-	// Advisory lock here.
+	// Advisory lock here in case multiple redis processes using 1 rdb file.
 	// Advisory locking is not an enforced locking scheme. It will work only if the
 	// participating processes are cooperating by explicitly acquiring locks.
 	// Otherwise, advisory locks will be ignored if a process is not aware of locks at all.
@@ -173,6 +166,8 @@ func WriteRdbFile(rdbMarshalled []byte) error {
 		fmt.Println("Error writing to file:", err)
 		return err
 	}
+
+	fmt.Println("RDB wrote sucessfullly.")
 
 	return nil
 }
@@ -233,6 +228,8 @@ func ReadRdbFile() ([]byte, error) {
 	}
 }
 
+// Spawn a goroutine to track total number of key changes
+// and marshall -> write rdb the data
 func PersistData(ds *datastore.Datastore) {
 	numKeyChanges := 0
 	ticker := time.NewTicker(time.Duration(config.Interval) * time.Second)
@@ -244,22 +241,26 @@ func PersistData(ds *datastore.Datastore) {
 			case <-ticker.C:
 				if numKeyChanges >= config.NumKeyChanges {
 					fmt.Println("Saving RDB...")
-					// Fork a child process
-					id, _, _ := unix.Syscall(unix.SYS_FORK, 0, 0, 0)
-
-					// In child process
-					if id == 0 {
-						rdbMarshalled, err := RdbMarshall(ds)
-						if err != nil {
-							fmt.Println(err.Error())
-						}
-						err = WriteRdbFile(rdbMarshalled)
-						if err != nil {
-							fmt.Println(err.Error())
-						}
+					rdbMarshalled, err := RdbMarshall(ds)
+					if err != nil {
+						fmt.Println(err.Error())
+					}
+					err = WriteRdbFile(rdbMarshalled)
+					if err != nil {
+						fmt.Println(err.Error())
 					}
 				}
 			}
 		}
 	}()
+}
+
+func EmptyRdb() []byte {
+	content, _ := hex.DecodeString(EmptyRdbHexString)
+	// if err != nil {
+	// 	return nil, err
+	// }
+
+	length := fmt.Sprintf("$%d\r\n", len(content))
+	return append([]byte(length), content...)
 }

@@ -7,13 +7,17 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
+
+	"github.com/Viet-ph/redis-go/internal/info"
 )
 
 type Datastore struct {
 	store        map[string]*Data
 	expiry       map[string]time.Time
 	KeyChangesCh chan struct{}
+	mu           *sync.RWMutex
 }
 
 func NewDatastore(store map[string]*Data, expiry map[string]time.Time) *Datastore {
@@ -28,10 +32,14 @@ func NewDatastore(store map[string]*Data, expiry map[string]time.Time) *Datastor
 		store:        store,
 		expiry:       expiry,
 		KeyChangesCh: make(chan struct{}),
+		mu:           &sync.RWMutex{},
 	}
 }
 
 func (ds *Datastore) Set(key string, value any, options []string) error {
+	ds.mu.Lock()
+	defer ds.mu.Unlock()
+
 	ds.store[key] = NewData(value)
 	if len(options) > 0 {
 		err := ds.setOptions(key, options)
@@ -40,7 +48,10 @@ func (ds *Datastore) Set(key string, value any, options []string) error {
 			return err
 		}
 	}
-	ds.KeyChangesCh <- struct{}{}
+
+	if info.Role == "master" {
+		ds.KeyChangesCh <- struct{}{}
+	}
 	return nil
 }
 
@@ -114,6 +125,9 @@ func (ds *Datastore) IsExpired(key string) bool {
 }
 
 func (ds *Datastore) Get(key string) (value any, exists bool) {
+	ds.mu.RLock()
+	defer ds.mu.RUnlock()
+
 	data, exists := ds.store[key]
 	if !exists {
 		return nil, false
@@ -128,15 +142,30 @@ func (ds *Datastore) Get(key string) (value any, exists bool) {
 }
 
 func (ds *Datastore) Del(key string) {
-	ds.KeyChangesCh <- struct{}{}
+	ds.mu.Lock()
+	defer ds.mu.Unlock()
+
+	if info.Role == "master" {
+		ds.KeyChangesCh <- struct{}{}
+	}
 	delete(ds.store, key)
 	delete(ds.expiry, key)
 }
 
-func (ds *Datastore) GetStoreSize() (int, int) {
-	return len(ds.store), len(ds.expiry)
-}
+func (ds *Datastore) DeepCopy() (map[string]*Data, map[string]time.Time) {
+	ds.mu.Lock()
+	defer ds.mu.Unlock()
 
-func (ds *Datastore) GetStorage() map[string]*Data {
-	return ds.store
+	store := make(map[string]*Data, len(ds.store))
+	expiry := make(map[string]time.Time, len(ds.expiry))
+
+	for k, v := range ds.store {
+		store[k] = v
+	}
+
+	for k, v := range ds.expiry {
+		expiry[k] = v
+	}
+
+	return store, expiry
 }
