@@ -19,8 +19,15 @@ To get started, you need to have Go installed on your system. You can download G
     ```bash
    git clone https://github.com/Viet-ph/redis-go.git
    cd redis-go
-   
-
-2. **Build the Project:**:
+2. **Build the Project**:
+This will compile the source code and create an executable binary named redis-go in your project directory.
     ```bash
-   go build
+    make build
+3. **Running the Redis-Go Server**:
+Once the project is built, you can start the server by running the following command:
+    ```bash
+    make run
+By default, the server listens on localhost:6379 (the standard Redis port). You can connect to it using the official Redis CLI or any Redis client:
+    ```bash
+    redis-cli
+
