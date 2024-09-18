@@ -27,7 +27,7 @@ This will compile the source code and create an executable binary named redis-go
 Once the project is built, you can start the server by running the following command:
     ```bash
     make run
-By default, the server listens on localhost:6379 (the standard Redis port). You can connect to it using the official Redis CLI or any Redis client:
+**By default, the server listens on localhost:6379 (the standard Redis port). You can connect to it using the official Redis CLI or any Redis client**:
     ```bash
     redis-cli
 
