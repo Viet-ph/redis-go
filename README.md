@@ -30,4 +30,5 @@ Once the project is built, you can start the server by running the following com
 **By default, the server listens on localhost:6379 (the standard Redis port). You can connect to it using the official Redis CLI or any Redis client**:
     ```bash
     redis-cli
+    ```
 
