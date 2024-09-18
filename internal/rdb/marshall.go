@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/binary"
 	"errors"
-	"fmt"
 	"strconv"
 
 	"github.com/Viet-ph/redis-go/config"
@@ -76,7 +75,6 @@ func marshallDb(ds *datastore.Datastore) ([]byte, error) {
 	buf.Write(encodedExpirySize)
 
 	// Key-Value pair starts
-
 	for key, data := range store {
 		// "expiry time in ms", followed by 8 byte unsigned long
 		if expireAt, hasExpiry := expiry[key]; hasExpiry {
@@ -101,9 +99,13 @@ func marshallDb(ds *datastore.Datastore) ([]byte, error) {
 }
 
 func marshallKeyValue(key string, value any) ([]byte, error) {
+	// Marshall KV follow this order:
+	// 1. value-type
+	// 2. string-encoded key
+	// 3. encoded-value
 	var (
 		buf             bytes.Buffer
-		stringfm        stringFormat
+		stringfm        StringFormat
 		keyMarshalled   []byte
 		valueMarshalled []byte
 		err             error
@@ -113,7 +115,6 @@ func marshallKeyValue(key string, value any) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	buf.Write(keyMarshalled)
 
 	switch v := value.(type) {
 	case string:
@@ -127,12 +128,13 @@ func marshallKeyValue(key string, value any) ([]byte, error) {
 		return nil, errors.New("value type not supported")
 	}
 
+	buf.Write(keyMarshalled)
 	buf.Write(valueMarshalled)
 
 	return buf.Bytes(), nil
 }
 
-func marshallString(data string, stringfm stringFormat) ([]byte, error) {
+func marshallString(data string, stringfm StringFormat) ([]byte, error) {
 	var buf bytes.Buffer
 	length := len(data)
 	lengthmarshalled, err := getLenghEncoding(uint32(length), stringfm)
@@ -146,26 +148,35 @@ func marshallString(data string, stringfm stringFormat) ([]byte, error) {
 		buf.Write(lengthmarshalled)
 		switch stringfm {
 		case Int8:
-			int8Val, _ := strconv.Atoi(data)
+			int8Val, err := strconv.Atoi(data)
+			if err != nil {
+				return nil, err
+			}
 			buf.WriteByte(byte(int8Val))
 		case Int16:
 			marshalldData := make([]byte, 2)
-			int16Val, _ := strconv.Atoi(data)
+			int16Val, err := strconv.Atoi(data)
+			if err != nil {
+				return nil, err
+			}
 			GlobalEndian.PutUint16(marshalldData, uint16(int16Val))
 			buf.Write(marshalldData)
 		case Int32:
 			marshalldData := make([]byte, 4)
-			int32Val, _ := strconv.Atoi(data)
+			int32Val, err := strconv.Atoi(data)
+			if err != nil {
+				return nil, err
+			}
 			GlobalEndian.PutUint32(marshalldData, uint32(int32Val))
 			buf.Write(marshalldData)
 		}
 	}
 
-	fmt.Printf("Marshalled %s - %d bytes\n", data, buf.Len())
+	//fmt.Printf("Marshalled %s - %d bytes\n", data, buf.Len())
 	return buf.Bytes(), nil
 }
 
-func getLenghEncoding(length uint32, stringType stringFormat) ([]byte, error) {
+func getLenghEncoding(length uint32, stringType StringFormat) ([]byte, error) {
 	var buf bytes.Buffer
 	if stringType == LengthPrefixed {
 		switch {
@@ -217,7 +228,7 @@ func isInteger(s string) (int64, bool) {
 	return val, true
 }
 
-func getStringFormat(s string) stringFormat {
+func getStringFormat(s string) StringFormat {
 	if intVal, ok := isInteger(s); ok {
 		switch {
 		case intVal >= -128 && intVal <= 127:

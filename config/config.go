@@ -5,7 +5,7 @@ var (
 	Port int    = 6379
 
 	RedisVer = "6.0.16"
-	RdbVer   = "0011"
+	RdbVer   = "0006"
 
 	DefaultMessageSize = 1024
 	MaximumClients     = 100

@@ -28,15 +28,6 @@ func NewDecoder(buf *bytes.Buffer) *Decoder {
 	}
 }
 
-// func (decoder *Decoder) ResetBufOffset() {
-// 	decoder.buf.Reset()
-// 	decoder.buf.Write(make([]byte, config.DefaultMessageSize))
-// }
-
-// func (decoder *Decoder) GetBufferLen() int {
-// 	return decoder.buf.Len()
-// }
-
 func (decoder *Decoder) Decode() (any, error) {
 	prefix, _, err := decoder.buf.ReadRune()
 	if err != nil {

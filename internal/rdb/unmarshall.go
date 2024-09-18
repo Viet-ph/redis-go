@@ -46,25 +46,25 @@ func unmarshalAuxi(buf *bytes.Reader) (auxiliary, error) {
 	}
 
 	// Unmarshal auxiliary fields
-	auxi.redisVer, err = unmarshalString(buf)
+	auxi.redisVer, err = unmarshallString(buf)
 	if err != nil {
 		return auxi, err
 	}
 	//fmt.Println("Redis-ver: " + auxi.redisVer)
 
-	auxi.redisBits, err = unmarshalString(buf)
+	auxi.redisBits, err = unmarshallString(buf)
 	if err != nil {
 		return auxi, err
 	}
 	//fmt.Println("Redis-bits: " + auxi.redisBits)
 
-	auxi.ctime, err = unmarshalString(buf)
+	auxi.ctime, err = unmarshallString(buf)
 	if err != nil {
 		return auxi, err
 	}
 	//fmt.Println("ctime: " + auxi.ctime)
 
-	auxi.usedMem, err = unmarshalString(buf)
+	auxi.usedMem, err = unmarshallString(buf)
 	if err != nil {
 		return auxi, err
 	}
@@ -74,12 +74,16 @@ func unmarshalAuxi(buf *bytes.Reader) (auxiliary, error) {
 }
 
 func unmarshalKeyValue(buf *bytes.Reader) (string, string, error) {
-	key, err := unmarshalString(buf)
+	// Unmarshall KV follow this order:
+	// 1. value-type
+	// 2. string-encoded key
+	// 3. encoded-value
+	valueType, err := buf.ReadByte()
 	if err != nil {
 		return "", "", err
 	}
 
-	valueType, err := buf.ReadByte()
+	key, err := unmarshallString(buf)
 	if err != nil {
 		return "", "", err
 	}
@@ -87,7 +91,7 @@ func unmarshalKeyValue(buf *bytes.Reader) (string, string, error) {
 	var value string
 	switch valueType {
 	case 0x00: // String encoding
-		value, err = unmarshalString(buf)
+		value, err = unmarshallString(buf)
 		if err != nil {
 			return "", "", err
 		}
@@ -147,8 +151,7 @@ func unmarshalDb(buf *bytes.Reader) (map[string]*datastore.Data, map[string]time
 		if err != nil {
 			return nil, nil, err
 		}
-		hasExpiry = expireTimeOpCode == EXPIRETIMEMS
-		if hasExpiry {
+		if expireTimeOpCode == EXPIRETIMEMS {
 			var timestamp int64
 			binary.Read(buf, GlobalEndian, &timestamp)
 			expireAt = time.Unix(timestamp, 0)
@@ -178,7 +181,7 @@ func unmarshalDb(buf *bytes.Reader) (map[string]*datastore.Data, map[string]time
 	return store, expiry, nil
 }
 
-func unmarshalString(buf *bytes.Reader) (string, error) {
+func unmarshallString(buf *bytes.Reader) (string, error) {
 	length, stringFormat, err := unmarshalLength(buf)
 	if err != nil {
 		return "", err
@@ -187,9 +190,12 @@ func unmarshalString(buf *bytes.Reader) (string, error) {
 	switch stringFormat {
 	case LengthPrefixed:
 		stringData := make([]byte, length)
-		_, err = buf.Read(stringData)
+		n, err := buf.Read(stringData)
 		if err != nil {
 			return "", err
+		}
+		if n < length {
+			return "", errors.New("string actual length not match encoded length")
 		}
 		return string(stringData), nil
 	case Int8:
@@ -220,7 +226,7 @@ func unmarshalString(buf *bytes.Reader) (string, error) {
 	}
 }
 
-func unmarshalLength(buf *bytes.Reader) (int, stringFormat, error) {
+func unmarshalLength(buf *bytes.Reader) (int, StringFormat, error) {
 	firstByte, err := buf.ReadByte()
 	if err != nil {
 		return 0, LengthPrefixed, err

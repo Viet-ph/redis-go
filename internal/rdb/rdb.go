@@ -35,13 +35,13 @@ const (
 )
 
 // String format
-type stringFormat int
+type StringFormat int
 
 const (
-	LengthPrefixed stringFormat = -1
-	Int8           stringFormat = 0x00
-	Int16          stringFormat = 0x01
-	Int32          stringFormat = 0x02
+	LengthPrefixed StringFormat = -1
+	Int8           StringFormat = 0x00
+	Int16          StringFormat = 0x01
+	Int32          StringFormat = 0x02
 )
 
 const BitsPerWord = 32 << (^uint(0) >> 63)

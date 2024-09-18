@@ -290,7 +290,7 @@ func (server *AsyncServer) respond(conn *connection.Conn, cmd command.Command, r
 			rawRdb, _ = rdb.RdbMarshall(server.store)
 		}
 		err = conn.QueueDatas(byteSliceResult, rawRdb)
-		fmt.Printf("Accepted replicatiobn: %d\n", conn.Fd)
+		fmt.Printf("Accepted replication fd %d\n", conn.Fd)
 		server.promoteToSlave(conn)
 	} else {
 		err = conn.QueueDatas(byteSliceResult)
