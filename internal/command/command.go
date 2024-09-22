@@ -37,32 +37,42 @@ func SetupCommands(handler *Handler) {
 		},
 		"SET": {
 			name: "SET",
-			description: `Set key to hold the string value. If key already holds a value,
+			description: `SET key value [EX seconds | PX milliseconds].
+						Set key to hold the string value. If key already holds a value,
 						it is overwritten, regardless of its type. Any previous time to 
-						live associated with the key is discarded on successful SET operation.`,
+						live associated with the key is discarded on successful SET operation.
+
+						The SET command supports a set of options that modify its behavior:.
+						- EX seconds -- Set the specified expire time, in seconds (a positive integer).
+						- PX milliseconds -- Set the specified expire time, in milliseconds (a positive integer).`,
 			handler: handler.Set,
 		},
 		"GET": {
 			name: "GET",
-			description: `Get the value of key. If the key does not exist the special value nil is returned. 
+			description: `GET key.
+						Get the value of key. If the key does not exist the special value nil is returned. 
 						An error is returned if the value stored at key is not a string, because GET only handles string values.`,
 			handler: handler.Get,
 		},
 		"HSET": {
 			name: "HSET",
-			description: `Sets the specified fields to their respective values in the hash stored at key.
+			description: `
+						HSET key field value [field value ...].
+						Sets the specified fields to their respective values in the hash stored at key.
 						This command overwrites the values of specified fields that exist in the hash. 
 						If key doesn't exist, a new key holding a hash is created.`,
 			handler: handler.Hset,
 		},
 		"HGET": {
-			name:        "HGET",
-			description: `Returns the value associated with field in the hash stored at key.`,
-			handler:     handler.HGet,
+			name: "HGET",
+			description: `HGET key field.
+						Returns the value associated with field in the hash stored at key.`,
+			handler: handler.HGet,
 		},
 		"HGETALL": {
 			name: "HGETALL",
-			description: `Returns all fields and values of the hash stored at key. 
+			description: `HGETALL key.
+						Returns all fields and values of the hash stored at key. 
 						In the returned value, every field name is followed by its value, 
 						so the length of the reply is twice the size of the hash.`,
 			handler: handler.HGetAll,
@@ -87,7 +97,8 @@ func SetupCommands(handler *Handler) {
 		},
 		"WAIT": {
 			name: "WAIT",
-			description: `This command blocks the current client until all the previous write commands
+			description: `WAIT numreplicas timeout. 
+						This command blocks the current client until all the previous write commands
 						are successfully transferred and acknowledged by at least the number of replicas
 						you specify in the numreplicas argument. If the value you specify for the timeout
 						argument (in milliseconds) is reached, the command returns even if the specified
@@ -110,6 +121,12 @@ func SetupCommands(handler *Handler) {
 			description: `Save the DB in background. Normally the OK code is immediately returned. 
 						Redis forks, the parent continues to serve the clients, the child saves the DB on disk then exits.`,
 			handler: handler.BgSave,
+		},
+		"COMMAND": {
+			name: "COMMAND",
+			description: `Return an array with details about every Redis command. 
+						Used with sub commands [list, docs, count]`,
+			handler: handler.Command,
 		},
 	}
 }

@@ -272,3 +272,40 @@ func (handler *Handler) BgSave(args []string, store *datastore.Datastore) (any, 
 	}()
 	return "OK", true
 }
+
+func (handler *Handler) Command(args []string, store *datastore.Datastore) (any, bool) {
+	if len(args) == 0 {
+		return errors.New("ERR wrong number of arguments for 'command' command"), true
+	}
+
+	subcmd := args[0]
+	switch strings.ToLower(subcmd) {
+	case "count":
+		return len(commands), true
+	case "list":
+		cmdNames := make([]string, len(commands))
+		i := 0
+		for k, _ := range commands {
+			cmdNames[i] = k
+			i++
+		}
+		return cmdNames, true
+	case "docs":
+		if len(args) < 2 {
+			return errors.New("ERR wrong number of arguments for 'command' command"), true
+		}
+
+		cmdName := strings.ToUpper(args[1])
+		cmdDescription := strings.Split(commands[cmdName].description, ".")
+		for i, description := range cmdDescription {
+			description = strings.ReplaceAll(description, "\n", "")
+			description = strings.ReplaceAll(description, "\t", "")
+			description = strings.TrimSpace(description)
+			cmdDescription[i] = description
+		}
+
+		return cmdDescription, true
+	default:
+		return fmt.Errorf("unknown subcommand '%s'", subcmd), true
+	}
+}

@@ -4,7 +4,7 @@
 
 ## What is this Project About?
 
-Redis-Go mimics core functionalities of the original Redis, such as storing and retrieving key-value pairs, but is implemented from scratch using Go. Unlike Redis, which uses a multi-threaded event loop model, this project implements a single-threaded event loop for handling multiple clients efficiently without using goroutines.
+Redis-Go mimics core functionalities of the original Redis, such as storing, retrieving key-value pairs, io-multiplexing, replication and more, but is implemented from scratch using Go. 
 
 ### Key Features:
 - **Basic Redis Commands**: Supports a wide range of Redis-like commands, including string and hash operations.
@@ -16,19 +16,50 @@ Redis-Go mimics core functionalities of the original Redis, such as storing and 
 To get started, you need to have Go installed on your system. You can download Go from [here](https://golang.org/dl/).
 
 1. **Clone the Repository**:
-    ```bash
-   git clone https://github.com/Viet-ph/redis-go.git
-   cd redis-go
+```sh
+$ git clone https://github.com/Viet-ph/redis-go.git
+$ cd redis-go
+```
 2. **Build the Project**:
 This will compile the source code and create an executable binary named redis-go in your project directory.
-    ```bash
-    make build
-3. **Running the Redis-Go Server**:
-Once the project is built, you can start the server by running the following command:
-    ```bash
-    make run
-**By default, the server listens on localhost:6379 (the standard Redis port). You can connect to it using the official Redis CLI or any Redis client**:
-    ```
-    redis-cli
-    ```
+```sh
+$ make build
+```
+## Quick Start
 
+1. **Running the Redis-Go Server**:
+Once the project is built, you can start the server with default settings by running the following command:
+```sh
+$ make run
+```
+```sh
+$ # Or manually execute go binary with custom port 
+$ ./bin/redis-go --port <YOUR_PORT>
+```
+**By default, the server listens on localhost:6379 (the standard Redis port). You can connect to it using the official Redis CLI or any Redis client**: 
+```sh
+$ redis-cli
+```
+1. **See available Commands:**
+```sh
+$ #List all commands
+$ redis-cli command list
+
+$ #Read command document
+$ redis-cli command docs <COMMAND>
+```
+
+2. **Start Replication**:
+After the master instance is fully initialized. You can run a replication with master host:
+```sh
+$ ./bin/redis-go --port <YOUR_PORT> --replicaof "<MASTER_IP> <MASTER_PORT>" 
+```
+
+## TODO:
+- [ ] RDB encoding for hash datatype
+- [ ] Implement Redis List datatype
+- [ ] Implement Redis Stream datatype
+- [ ] Implement Redis Transaction
+
+
+   
