@@ -136,16 +136,24 @@ func (server *AsyncServer) Start() {
 		//Check task queue for any tasks that available
 		server.taskQueue.DrainQueue()
 
-		events, err := server.iomultiplexer.Poll(100)
+		events, err := server.iomultiplexer.Poll(1000)
 		if len(events) > 0 {
 			fmt.Println("polled " + strconv.Itoa(len(events)) + " events")
 		}
 		if err != nil {
+			// Many system calls will report the EINTR error code if a signal occurred
+			// while the system call was in progress. No error actually occurred,
+			// it's just reported that way because the system isn't able to resume
+			// the system call automatically. This coding pattern simply retries the
+			// system call when this happens, to ignore the interrupt.
 			if errors.Is(err, unix.EINTR) {
 				continue
 			}
-			fmt.Println("Error during epoll wait:" + err.Error())
-			return
+
+			// Interupted system call error after timeout is given in Darwin.
+			// Print here just to examine the error, not to block the event loop.
+			fmt.Printf("Error during epoll wait: %v\n", err)
+			continue
 		}
 
 		for _, event := range events {
