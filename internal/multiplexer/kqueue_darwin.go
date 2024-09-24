@@ -95,7 +95,7 @@ func (kq *Kqueue) Poll(timeout time.Duration) ([]event, error) {
 		numEvents, err = unix.Kevent(kq.fd, nil, kq.kqEvents, nil)
 	} else {
 		numEvents, err = unix.Kevent(kq.fd, nil, kq.kqEvents, &unix.Timespec{
-			Nsec: int64(timeout),
+			Nsec: int64(timeout * 1000),
 		})
 	}
 
