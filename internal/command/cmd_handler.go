@@ -285,7 +285,7 @@ func (handler *Handler) Command(args []string, store *datastore.Datastore) (any,
 	case "list":
 		cmdNames := make([]string, len(commands))
 		i := 0
-		for k, _ := range commands {
+		for k := range commands {
 			cmdNames[i] = k
 			i++
 		}

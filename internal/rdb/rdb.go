@@ -44,6 +44,9 @@ const (
 	Int32          StringFormat = 0x02
 )
 
+// ^uint(0): flips all bits to 1
+// ^uint(0) >> 63: rightshift all bits by 63 places, results 0 on 32bit system and 1 on 64bit system
+// 32 << (0 or 1): If the result of ^uint(0) >> 63 is 1 (on a 64-bit system), this becomes 32 << 1, which equals 64, otherwise 32.
 const BitsPerWord = 32 << (^uint(0) >> 63)
 
 func RdbMarshall(ds *datastore.Datastore) ([]byte, error) {
@@ -115,7 +118,7 @@ memUsed: %s
 		return nil, nil, err
 	}
 
-	//// Unmarshal footer
+	// Unmarshal footer
 	err = unmarshalFooter(buf)
 	if err != nil {
 		return nil, nil, err
